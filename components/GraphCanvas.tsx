@@ -294,15 +294,20 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
 
         return (
           <g key={edge.id} style={{ opacity, transition: "opacity 500ms ease-out" }}>
+            {/* Active edges use a fixed mid-gray instead of currentColor at
+                high opacity — a near-white/black line at high opacity read
+                as too close to the label text itself, hurting legibility.
+                Gray sits deliberately between the dim tertiary lines and
+                full-brightness text. */}
             <line
               x1={from.x}
               y1={from.y}
               x2={to.x}
               y2={to.y}
-              stroke="currentColor"
-              strokeOpacity={isActive ? 0.6 : 0.25}
+              stroke={isActive ? "#9ca3af" : "currentColor"}
+              strokeOpacity={isActive ? 1 : 0.25}
               strokeWidth={isActive ? 2 : 1.5}
-              className="text-black dark:text-white"
+              className={isActive ? undefined : "text-black dark:text-white"}
             />
           </g>
         );
@@ -410,7 +415,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                   {isHovered ? (
                     <text
                       x={node.x}
-                      y={(node.y ?? 0) + radius + 21}
+                      y={(node.y ?? 0) + radius + 16}
                       textAnchor="middle"
                       fontSize={2.5}
                       className="fill-black/50 dark:fill-white/50"
