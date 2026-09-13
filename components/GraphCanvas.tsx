@@ -44,9 +44,9 @@ const DEPTH_TIERS: Record<0 | 1 | 2 | 3, { z: number; opacity: number }> = {
 
 // Simple perspective projection (scale = cameraDistance / (cameraDistance +
 // z)), so "closer" (negative z) reads as bigger and "further" (positive z)
-// as smaller — chosen so z=-100 lands close to the ~2.4x the old hardcoded
-// hover scale used.
-const CAMERA_DISTANCE = 170;
+// as smaller. A smaller cameraDistance makes the falloff steeper (more
+// size contrast between tiers) at the cost of a more extreme focus scale.
+const CAMERA_DISTANCE = 140;
 
 function scaleForZ(z: number): number {
   return CAMERA_DISTANCE / (CAMERA_DISTANCE + z);
@@ -54,7 +54,7 @@ function scaleForZ(z: number): number {
 
 // How much bigger a direct connection of the hovered node gets, overriding
 // its z-derived scale (which would otherwise be 1x, i.e. unchanged).
-const SECONDARY_HOVER_SCALE = 1.5;
+const SECONDARY_HOVER_SCALE = 1.8;
 
 /** BFS distance (capped at 3) from the hovered node, per node id. Everyone is tier 1 ("at rest") when nothing is hovered. */
 function computeDepthTiers(
