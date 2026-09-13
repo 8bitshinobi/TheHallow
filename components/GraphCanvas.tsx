@@ -166,6 +166,21 @@ function driftParamsFor(id: string): DriftParams {
   };
 }
 
+// Random per-node offset added on top of a tier's base cascade delay, so
+// nodes within the same "set" don't all move in perfect lockstep. Kept
+// well under the 0.1s gap between tiers (see DEPTH_DELAYS) so a jittered
+// node can never start before an earlier tier or after a later one — e.g.
+// tier 1's latest possible start (0.1 + 0.08 = 0.18s) is still well before
+// tier 2's earliest (0.2s).
+const JITTER_RANGE = 0.08;
+
+// Different salt than driftParamsFor's seed so a node's jitter isn't
+// correlated with its drift phase.
+function jitterFor(id: string): number {
+  const random = mulberry32(hashString(id) ^ 0x5bd1e995);
+  return random() * JITTER_RANGE;
+}
+
 function subscribeReducedMotion(onChange: () => void) {
   const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
   mql.addEventListener("change", onChange);
@@ -347,8 +362,11 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         const { z, opacity } = DEPTH_TIERS[tier];
         // Keyed by the *last* focus point (delayTiers), not the live one,
         // so un-focusing ripples back through the same rings it came from
-        // rather than every node suddenly sharing one "idle" delay.
-        const delay = DEPTH_DELAYS[delayTiers.get(node.id) ?? 1];
+        // rather than every node suddenly sharing one "idle" delay. Each
+        // node adds its own stable jitter on top so a whole tier doesn't
+        // move in perfect lockstep, while staying within its tier's
+        // window (see JITTER_RANGE) so tier order is never violated.
+        const delay = DEPTH_DELAYS[delayTiers.get(node.id) ?? 1] + jitterFor(node.id);
         // The padded hit target is only useful for a small, resting-size
         // dot — once a node is the focus (z=-100) it's already scaled up
         // large enough to target precisely, so the hit zone shrinks back
