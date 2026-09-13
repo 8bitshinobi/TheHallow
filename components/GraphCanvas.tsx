@@ -250,7 +250,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
               style={{
                 transform: `scale(${isHovered ? 2.4 : 1})`,
                 transformOrigin: `${node.x}px ${node.y}px`,
-                transition: "transform 180ms ease-out, opacity 150ms ease-out",
+                transition: "transform 500ms ease-out, opacity 150ms ease-out",
                 opacity: isDimmed ? 0.35 : 1,
               }}
             >
