@@ -395,7 +395,10 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             style={{
               transform: `scale(${scale})`,
               transformOrigin: `${originX}px ${originY}px`,
-              transition: `transform 500ms ease-out ${delay}s`,
+              // A much steeper deceleration than standard ease-out — most
+              // of the scale change happens fast, up front, then eases
+              // hard into the final size for a punchier "pull forward".
+              transition: `transform 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
             }}
           >
               {/* Invisible, larger than the visible dot at rest so a small
