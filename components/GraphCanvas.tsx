@@ -34,15 +34,12 @@ const SHOW_LABELS = false;
 
 // Depth tiers by graph distance from the hovered node: 0 = the hovered node
 // itself, 1 = its direct connections, 2 = two hops out, 3 = everything else.
-// z is a "distance from camera" value (negative = closer); opacity per tier
-// is an explicit design choice, not a monotonic falloff (tier 3 is
-// deliberately less transparent than tier 2 so the unrelated background
-// doesn't wash out completely).
+// z is a "distance from camera" value (negative = closer).
 const DEPTH_TIERS: Record<0 | 1 | 2 | 3, { z: number; opacity: number }> = {
   0: { z: -100, opacity: 1 },
   1: { z: 0, opacity: 0.75 },
-  2: { z: 25, opacity: 0.5 },
-  3: { z: 50, opacity: 0.75 },
+  2: { z: 50, opacity: 0.5 },
+  3: { z: 90, opacity: 0.25 },
 };
 
 // Simple perspective projection (scale = cameraDistance / (cameraDistance +
