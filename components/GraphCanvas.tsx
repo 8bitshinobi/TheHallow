@@ -28,6 +28,10 @@ type Props = {
   linkMode: "recenter" | "detail";
 };
 
+// Hover/neighbor name labels are visually noisy right now (long titles
+// overlap heavily) — off for now, flip back on once that's addressed.
+const SHOW_LABELS = false;
+
 // Deterministic color per object type, so new free-form types (there's no
 // fixed enum — see CLAUDE.md) automatically get a stable, distinct color
 // without needing a hardcoded per-type list.
@@ -237,9 +241,10 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           const isCenter = node.id === centerId;
           const isHovered = node.id === hoveredId;
           const isNeighbor = neighborIds.has(node.id);
-          const showLabel = isHovered || isNeighbor;
+          const showLabel = SHOW_LABELS && (isHovered || isNeighbor);
           const isDimmed = hoveredId !== null && !isHovered && !isNeighbor;
           const radius = isCenter ? 10 : 6;
+          const hitRadius = radius + 14;
 
           return (
             <Link
@@ -254,6 +259,10 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                 opacity: isDimmed ? 0.35 : 1,
               }}
             >
+              {/* Invisible, larger than the visible dot, so a small node is
+                  still easy to hover/click. fill="transparent" (not "none")
+                  so it still registers pointer events. */}
+              <circle cx={node.x} cy={node.y} r={hitRadius} fill="transparent" />
               <circle
                 cx={node.x}
                 cy={node.y}
