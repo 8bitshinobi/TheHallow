@@ -45,9 +45,10 @@ const DEPTH_TIERS: Record<0 | 1 | 2 | 3, { z: number; opacity: number }> = {
 };
 
 // Cascading delay per tier — the focused node moves immediately, and each
-// ring further out starts 0.2s after the one before it, so the focus
+// ring further out starts 0.1s after the one before it, so the focus
 // effect visibly ripples outward instead of every node moving at once.
-const DEPTH_DELAYS: Record<0 | 1 | 2 | 3, number> = { 0: 0, 1: 0.2, 2: 0.4, 3: 0.6 };
+// Applies both when focusing and un-focusing.
+const DEPTH_DELAYS: Record<0 | 1 | 2 | 3, number> = { 0: 0, 1: 0.1, 2: 0.2, 3: 0.3 };
 
 // Simple perspective projection (scale = cameraDistance / (cameraDistance +
 // z)), so "closer" (negative z) reads as bigger and "further" (positive z)
@@ -201,6 +202,10 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   const reduceMotion = useReducedMotion();
   const t = useDriftClock(!reduceMotion);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // Kept even after mouse-out (unlike hoveredId) so the un-focus animation
+  // can cascade back through the same rings it came from, instead of every
+  // node suddenly sharing one "idle" tier the moment hover ends.
+  const [lastHoveredId, setLastHoveredId] = useState<string | null>(null);
 
   // Settled layout — computed once per graph, not per animation frame.
   const anchored = useMemo<PositionedNode[]>(() => {
@@ -278,6 +283,14 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     nodes.map((node) => node.id),
     edges
   );
+  // Same ring computation, but anchored on the last focus point rather
+  // than the live one, purely to drive the cascade's timing (see delay
+  // below) — target scale/opacity still come from depthTiers above.
+  const delayTiers = computeDepthTiers(
+    lastHoveredId,
+    nodes.map((node) => node.id),
+    edges
+  );
 
   return (
     <svg viewBox={`${minX} ${minY} ${width} ${height}`} className="h-[500px] w-full">
@@ -332,10 +345,10 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
 
         const tier = depthTiers.get(node.id) ?? 1;
         const { z, opacity } = DEPTH_TIERS[tier];
-        // Only stagger the *reveal* (something is now hovered) — snapping
-        // back to rest with the same outward ripple would read as sluggish
-        // on the way out, so mouse-leave (hoveredId === null) is instant.
-        const delay = hoveredId !== null ? DEPTH_DELAYS[tier] : 0;
+        // Keyed by the *last* focus point (delayTiers), not the live one,
+        // so un-focusing ripples back through the same rings it came from
+        // rather than every node suddenly sharing one "idle" delay.
+        const delay = DEPTH_DELAYS[delayTiers.get(node.id) ?? 1];
         // The padded hit target is only useful for a small, resting-size
         // dot — once a node is the focus (z=-100) it's already scaled up
         // large enough to target precisely, so the hit zone shrinks back
@@ -374,7 +387,10 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           <Link
             key={node.id}
             href={hrefFor(node.id)}
-            onMouseEnter={() => setHoveredId(node.id)}
+            onMouseEnter={() => {
+              setHoveredId(node.id);
+              setLastHoveredId(node.id);
+            }}
             onMouseLeave={() => setHoveredId(null)}
             style={{
               transform: `scale(${scale})`,
