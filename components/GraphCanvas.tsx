@@ -304,7 +304,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
               y1={from.y}
               x2={to.x}
               y2={to.y}
-              stroke={isActive ? "#9ca3af" : "currentColor"}
+              stroke={isActive ? "#6b7280" : "currentColor"}
               strokeOpacity={isActive ? 1 : 0.25}
               strokeWidth={isActive ? 2 : 1.5}
               className={isActive ? undefined : "text-black dark:text-white"}
@@ -370,8 +370,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             style={{
               transform: `scale(${scale})`,
               transformOrigin: `${originX}px ${originY}px`,
-              transition: "transform 500ms ease-out, opacity 500ms ease-out",
-              opacity,
+              transition: "transform 500ms ease-out",
             }}
           >
               {/* Invisible, larger than the visible dot at rest so a small
@@ -387,14 +386,22 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                 fill="transparent"
                 style={{ transition: "r 500ms ease-out" }}
               />
+              {/* Solid backing, always fully opaque, matching the page
+                  background — masks the edge lines drawn earlier (so
+                  "behind") in the SVG. Without this, a dimmed node's own
+                  translucent fill let connection lines show straight
+                  through its own body. */}
+              <circle cx={node.x} cy={node.y} r={radius} fill="var(--background)" />
               <circle
                 cx={node.x}
                 cy={node.y}
                 r={radius}
                 fill={colorForType(node.type)}
+                fillOpacity={opacity}
                 stroke={isCenter ? "currentColor" : "none"}
                 strokeWidth={isCenter ? 2 : 0}
                 className={isCenter ? "text-black dark:text-white" : undefined}
+                style={{ transition: "fill-opacity 500ms ease-out" }}
               />
               {showLabel ? (
                 <>
@@ -408,6 +415,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                     y={(node.y ?? 0) + radius + 12}
                     textAnchor="middle"
                     fontSize={isHovered ? 5 : 7}
+                    opacity={opacity}
                     className="fill-black dark:fill-white"
                   >
                     {node.graphLabel ?? node.name}
@@ -418,6 +426,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                       y={(node.y ?? 0) + radius + 16}
                       textAnchor="middle"
                       fontSize={2.5}
+                      opacity={opacity}
                       className="fill-black/50 dark:fill-white/50"
                     >
                       {node.type}
