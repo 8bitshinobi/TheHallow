@@ -273,8 +273,6 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         const from = byId.get(edge.from);
         const to = byId.get(edge.to);
         if (!from || !to) return null;
-        const midX = ((from.x ?? 0) + (to.x ?? 0)) / 2;
-        const midY = ((from.y ?? 0) + (to.y ?? 0)) / 2;
         const isActive = hoveredId !== null && (edge.from === hoveredId || edge.to === hoveredId);
 
         // Same transparency rule as nodes: an edge takes the opacity of
@@ -299,17 +297,6 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
               strokeWidth={isActive ? 2 : 1.5}
               className="text-black dark:text-white"
             />
-            {edge.label && isActive ? (
-              <text
-                x={midX}
-                y={midY}
-                textAnchor="middle"
-                fontSize={10}
-                className="fill-black/50 dark:fill-white/50"
-              >
-                {edge.label}
-              </text>
-            ) : null}
           </g>
         );
       })}
