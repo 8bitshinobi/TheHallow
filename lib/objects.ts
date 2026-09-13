@@ -33,13 +33,34 @@ export async function getObject(id: string): Promise<HallowObject | null> {
   return data;
 }
 
+/** First 1-2 words of a name, used when no explicit graph label is set. */
+function fallbackGraphLabel(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).join(" ");
+}
+
+function toGraphObject(row: {
+  id: string;
+  type: string;
+  name: string;
+  properties: Record<string, string> | null;
+}): ConnectedObject["object"] {
+  const explicit = row.properties?.label?.trim();
+  return {
+    id: row.id,
+    type: row.type,
+    name: row.name,
+    graphLabel: explicit || fallbackGraphLabel(row.name),
+  };
+}
+
 export async function getOutgoingConnections(
   id: string
 ): Promise<ConnectedObject[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("edges")
-    .select("id, label, to_id, objects:to_id (id, type, name)")
+    .select("id, label, to_id, objects:to_id (id, type, name, properties)")
     .eq("from_id", id);
 
   if (error) throw new Error(error.message);
@@ -49,7 +70,7 @@ export async function getOutgoingConnections(
     .map((row) => ({
       edgeId: row.id,
       label: row.label,
-      object: row.objects as unknown as ConnectedObject["object"],
+      object: toGraphObject(row.objects as unknown as Parameters<typeof toGraphObject>[0]),
     }));
 }
 
@@ -59,7 +80,7 @@ export function buildNeighborhoodGraph(
   incoming: ConnectedObject[]
 ): Graph {
   const nodesById = new Map<string, GraphNode>();
-  nodesById.set(center.id, { id: center.id, type: center.type, name: center.name });
+  nodesById.set(center.id, toGraphObject(center));
 
   for (const connection of [...outgoing, ...incoming]) {
     nodesById.set(connection.object.id, connection.object);
@@ -75,9 +96,9 @@ export function buildNeighborhoodGraph(
 
 export async function listAllObjectsLight(): Promise<GraphNode[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("objects").select("id, type, name");
+  const { data, error } = await supabase.from("objects").select("id, type, name, properties");
   if (error) throw new Error(error.message);
-  return data ?? [];
+  return (data ?? []).map(toGraphObject);
 }
 
 export async function listAllEdges(): Promise<Graph["edges"]> {
@@ -98,7 +119,7 @@ export async function getIncomingConnections(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("edges")
-    .select("id, label, from_id, objects:from_id (id, type, name)")
+    .select("id, label, from_id, objects:from_id (id, type, name, properties)")
     .eq("to_id", id);
 
   if (error) throw new Error(error.message);
@@ -108,6 +129,6 @@ export async function getIncomingConnections(
     .map((row) => ({
       edgeId: row.id,
       label: row.label,
-      object: row.objects as unknown as ConnectedObject["object"],
+      object: toGraphObject(row.objects as unknown as Parameters<typeof toGraphObject>[0]),
     }));
 }

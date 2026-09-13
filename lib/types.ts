@@ -18,9 +18,14 @@ export type Edge = {
 export type ConnectedObject = {
   edgeId: string;
   label: string | null;
-  object: Pick<HallowObject, "id" | "type" | "name">;
+  object: { id: string; type: string; name: string; graphLabel?: string };
 };
 
-export type GraphNode = { id: string; type: string; name: string };
+// graphLabel is an optional short (1-2 word) display name for the graph
+// view, sourced from the object's own properties.label — full names like
+// "Field Journal: Rangard Ricker – Emberdart Observation" are too long to
+// show under a small node. Falls back to the full name (truncated) when
+// no explicit label has been set.
+export type GraphNode = { id: string; type: string; name: string; graphLabel?: string };
 export type GraphEdge = { id: string; from: string; to: string; label: string | null };
 export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] };

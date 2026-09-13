@@ -28,9 +28,11 @@ type Props = {
   linkMode: "recenter" | "detail";
 };
 
-// Hover/neighbor name labels are visually noisy right now (long titles
-// overlap heavily) — off for now, flip back on once that's addressed.
-const SHOW_LABELS = false;
+// Hover/neighbor labels use each node's short graphLabel (1-2 words,
+// sourced from properties.label or a fallback truncation — see
+// lib/objects.ts) instead of the full name, to avoid the overlap that
+// forced these off originally.
+const SHOW_LABELS = true;
 
 // Depth tiers by graph distance from the hovered node: 0 = the hovered node
 // itself, 1 = its direct connections, 2 = two hops out, 3 = everything else.
@@ -397,7 +399,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                     fontSize={isHovered ? 6 : 11}
                     className="fill-black dark:fill-white"
                   >
-                    {node.name}
+                    {node.graphLabel ?? node.name}
                   </text>
                   {isHovered ? (
                     <text
