@@ -52,6 +52,10 @@ function scaleForZ(z: number): number {
   return CAMERA_DISTANCE / (CAMERA_DISTANCE + z);
 }
 
+// How much bigger a direct connection of the hovered node gets, overriding
+// its z-derived scale (which would otherwise be 1x, i.e. unchanged).
+const SECONDARY_HOVER_SCALE = 1.5;
+
 /** BFS distance (capped at 3) from the hovered node, per node id. Everyone is tier 1 ("at rest") when nothing is hovered. */
 function computeDepthTiers(
   hoveredId: string | null,
@@ -314,7 +318,12 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
 
         const tier = depthTiers.get(node.id) ?? 1;
         const { z, opacity } = DEPTH_TIERS[tier];
-        const scale = scaleForZ(z);
+        // Tier 1 doubles as both "idle, nothing hovered" (stay at rest,
+        // scale 1) and "secondary — a direct connection of the hovered
+        // node" (pop up 50% so the immediate connections read as active
+        // participants in the focus, not just unchanged background).
+        const scale =
+          hoveredId !== null && tier === 1 ? SECONDARY_HOVER_SCALE : scaleForZ(z);
 
         // Pivot on the settled (non-drifting) position, not the live
         // drifting one — transform-origin isn't itself a transitioned
