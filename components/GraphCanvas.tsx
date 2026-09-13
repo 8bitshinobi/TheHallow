@@ -393,15 +393,16 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
               />
               {showLabel ? (
                 <>
-                  {/* Only the hovered node itself is CSS-scaled (transform: scale
-                      above), so its label font is set small here and grows with
-                      it. Neighbor labels aren't scaled, so theirs stays at normal
-                      readable size directly. */}
+                  {/* Every labeled node is CSS-scaled (transform: scale
+                      above) — focus at 3.5x, secondary at 1.8x — so these
+                      are base font sizes, not the actual rendered size.
+                      Chosen so the scaled result reads focus (5*3.5=17.5)
+                      clearly bigger than secondary (7*1.8=12.6). */}
                   <text
                     x={node.x}
                     y={(node.y ?? 0) + radius + 12}
                     textAnchor="middle"
-                    fontSize={isHovered ? 5 : 11}
+                    fontSize={isHovered ? 5 : 7}
                     className="fill-black dark:fill-white"
                   >
                     {node.graphLabel ?? node.name}
