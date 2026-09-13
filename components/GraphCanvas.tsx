@@ -32,6 +32,71 @@ type Props = {
 // overlap heavily) — off for now, flip back on once that's addressed.
 const SHOW_LABELS = false;
 
+// Depth tiers by graph distance from the hovered node: 0 = the hovered node
+// itself, 1 = its direct connections, 2 = two hops out, 3 = everything else.
+// z is a "distance from camera" value (negative = closer); opacity per tier
+// is an explicit design choice, not a monotonic falloff (tier 3 is
+// deliberately less transparent than tier 2 so the unrelated background
+// doesn't wash out completely).
+const DEPTH_TIERS: Record<0 | 1 | 2 | 3, { z: number; opacity: number }> = {
+  0: { z: -100, opacity: 1 },
+  1: { z: 0, opacity: 0.75 },
+  2: { z: 25, opacity: 0.5 },
+  3: { z: 50, opacity: 0.75 },
+};
+
+// Simple perspective projection (scale = cameraDistance / (cameraDistance +
+// z)), so "closer" (negative z) reads as bigger and "further" (positive z)
+// as smaller — chosen so z=-100 lands close to the ~2.4x the old hardcoded
+// hover scale used.
+const CAMERA_DISTANCE = 170;
+
+function scaleForZ(z: number): number {
+  return CAMERA_DISTANCE / (CAMERA_DISTANCE + z);
+}
+
+/** BFS distance (capped at 3) from the hovered node, per node id. Everyone is tier 1 ("at rest") when nothing is hovered. */
+function computeDepthTiers(
+  hoveredId: string | null,
+  nodeIds: string[],
+  edges: GraphEdge[]
+): Map<string, 0 | 1 | 2 | 3> {
+  const tiers = new Map<string, 0 | 1 | 2 | 3>();
+
+  if (!hoveredId) {
+    for (const id of nodeIds) tiers.set(id, 1);
+    return tiers;
+  }
+
+  const adjacency = new Map<string, string[]>();
+  for (const id of nodeIds) adjacency.set(id, []);
+  for (const edge of edges) {
+    adjacency.get(edge.from)?.push(edge.to);
+    adjacency.get(edge.to)?.push(edge.from);
+  }
+
+  tiers.set(hoveredId, 0);
+  let frontier = [hoveredId];
+  for (let depth = 1; depth <= 2; depth++) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const neighbor of adjacency.get(id) ?? []) {
+        if (!tiers.has(neighbor)) {
+          tiers.set(neighbor, depth as 1 | 2);
+          next.push(neighbor);
+        }
+      }
+    }
+    frontier = next;
+  }
+
+  for (const id of nodeIds) {
+    if (!tiers.has(id)) tiers.set(id, 3);
+  }
+
+  return tiers;
+}
+
 // Deterministic color per object type, so new free-form types (there's no
 // fixed enum — see CLAUDE.md) automatically get a stable, distinct color
 // without needing a hardcoded per-type list.
@@ -191,6 +256,12 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   const height = Math.max(...ys) - minY + padding;
 
   const byId = new Map(rendered.map((node) => [node.id, node]));
+  const anchoredById = new Map(anchored.map((node) => [node.id, node]));
+  const depthTiers = computeDepthTiers(
+    hoveredId,
+    nodes.map((node) => node.id),
+    edges
+  );
 
   return (
     <svg viewBox={`${minX} ${minY} ${width} ${height}`} className="h-[500px] w-full">
@@ -231,34 +302,44 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         );
       })}
 
-      {[...rendered]
-        .sort((a, b) => {
-          const rank = (n: PositionedNode) =>
-            n.id === hoveredId ? 2 : neighborIds.has(n.id) ? 1 : 0;
-          return rank(a) - rank(b);
-        })
-        .map((node) => {
-          const isCenter = node.id === centerId;
-          const isHovered = node.id === hoveredId;
-          const isNeighbor = neighborIds.has(node.id);
-          const showLabel = SHOW_LABELS && (isHovered || isNeighbor);
-          const isDimmed = hoveredId !== null && !isHovered && !isNeighbor;
-          const radius = isCenter ? 10 : 6;
-          const hitRadius = radius + 14;
+      {/* Fixed, hover-independent order — reordering elements to "bring to
+          front" caused inconsistent transitions (some nodes' in-flight
+          scale animation would glitch on reorder). Depth is conveyed by
+          scale/opacity alone instead; that's enough since nodes rarely
+          overlap in this layout. */}
+      {rendered.map((node) => {
+        const isCenter = node.id === centerId;
+        const isHovered = node.id === hoveredId;
+        const isNeighbor = neighborIds.has(node.id);
+        const showLabel = SHOW_LABELS && (isHovered || isNeighbor);
+        const radius = isCenter ? 10 : 6;
+        const hitRadius = radius + 14;
 
-          return (
-            <Link
-              key={node.id}
-              href={hrefFor(node.id)}
-              onMouseEnter={() => setHoveredId(node.id)}
-              onMouseLeave={() => setHoveredId(null)}
-              style={{
-                transform: `scale(${isHovered ? 2.4 : 1})`,
-                transformOrigin: `${node.x}px ${node.y}px`,
-                transition: "transform 500ms ease-out, opacity 150ms ease-out",
-                opacity: isDimmed ? 0.35 : 1,
-              }}
-            >
+        const tier = depthTiers.get(node.id) ?? 1;
+        const { z, opacity } = DEPTH_TIERS[tier];
+        const scale = scaleForZ(z);
+
+        // Pivot on the settled (non-drifting) position, not the live
+        // drifting one — transform-origin isn't itself a transitioned
+        // property, so if it moved every drift tick it would snap the
+        // scale's visual center mid-animation instead of easing smoothly.
+        const anchor = anchoredById.get(node.id);
+        const originX = anchor?.x ?? node.x;
+        const originY = anchor?.y ?? node.y;
+
+        return (
+          <Link
+            key={node.id}
+            href={hrefFor(node.id)}
+            onMouseEnter={() => setHoveredId(node.id)}
+            onMouseLeave={() => setHoveredId(null)}
+            style={{
+              transform: `scale(${scale})`,
+              transformOrigin: `${originX}px ${originY}px`,
+              transition: "transform 500ms ease-out, opacity 500ms ease-out",
+              opacity,
+            }}
+          >
               {/* Invisible, larger than the visible dot, so a small node is
                   still easy to hover/click. fill="transparent" (not "none")
                   so it still registers pointer events. */}
