@@ -123,6 +123,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
 
   const reduceMotion = useReducedMotion();
   const t = useDriftClock(!reduceMotion);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   // Settled layout — computed once per graph, not per animation frame.
   const anchored = useMemo<PositionedNode[]>(() => {
@@ -153,10 +154,20 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     return <p className="text-sm text-black/50 dark:text-white/50">No connections yet.</p>;
   }
 
+  const neighborIds = new Set<string>();
+  if (hoveredId) {
+    for (const edge of edges) {
+      if (edge.from === hoveredId) neighborIds.add(edge.to);
+      if (edge.to === hoveredId) neighborIds.add(edge.from);
+    }
+  }
+
   // Live positions = anchor + drift. Edges read from this too, so lines
   // stay attached to their nodes as they float instead of drifting apart.
+  // The hovered node itself skips drift, so its label doesn't jitter while
+  // you're trying to read it.
   const rendered = anchored.map((node) => {
-    if (reduceMotion) return node;
+    if (reduceMotion || node.id === hoveredId) return node;
     const drift = driftParamsFor(node.id);
     return {
       ...node,
@@ -185,20 +196,23 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         if (!from || !to) return null;
         const midX = ((from.x ?? 0) + (to.x ?? 0)) / 2;
         const midY = ((from.y ?? 0) + (to.y ?? 0)) / 2;
+        const isActive = hoveredId !== null && (edge.from === hoveredId || edge.to === hoveredId);
+        const isDimmed = hoveredId !== null && !isActive;
 
         return (
-          <g key={edge.id}>
+          <g key={edge.id} style={{ transition: "opacity 150ms ease-out" }}>
             <line
               x1={from.x}
               y1={from.y}
               x2={to.x}
               y2={to.y}
               stroke="currentColor"
-              strokeOpacity={0.25}
-              strokeWidth={1.5}
+              strokeOpacity={isActive ? 0.6 : 0.25}
+              strokeWidth={isActive ? 2 : 1.5}
+              opacity={isDimmed ? 0.25 : 1}
               className="text-black dark:text-white"
             />
-            {edge.label ? (
+            {edge.label && isActive ? (
               <text
                 x={midX}
                 y={midY}
@@ -213,42 +227,73 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         );
       })}
 
-      {rendered.map((node) => {
-        const isCenter = node.id === centerId;
-        const radius = isCenter ? 22 : 16;
+      {[...rendered]
+        .sort((a, b) => {
+          const rank = (n: PositionedNode) =>
+            n.id === hoveredId ? 2 : neighborIds.has(n.id) ? 1 : 0;
+          return rank(a) - rank(b);
+        })
+        .map((node) => {
+          const isCenter = node.id === centerId;
+          const isHovered = node.id === hoveredId;
+          const isNeighbor = neighborIds.has(node.id);
+          const showLabel = isHovered || isNeighbor;
+          const isDimmed = hoveredId !== null && !isHovered && !isNeighbor;
+          const radius = isCenter ? 10 : 6;
 
-        return (
-          <Link key={node.id} href={hrefFor(node.id)}>
-            <circle
-              cx={node.x}
-              cy={node.y}
-              r={radius}
-              fill={colorForType(node.type)}
-              stroke={isCenter ? "currentColor" : "none"}
-              strokeWidth={isCenter ? 3 : 0}
-              className={isCenter ? "text-black dark:text-white" : undefined}
-            />
-            <text
-              x={node.x}
-              y={(node.y ?? 0) + radius + 14}
-              textAnchor="middle"
-              fontSize={11}
-              className="fill-black dark:fill-white"
+          return (
+            <Link
+              key={node.id}
+              href={hrefFor(node.id)}
+              onMouseEnter={() => setHoveredId(node.id)}
+              onMouseLeave={() => setHoveredId(null)}
+              style={{
+                transform: `scale(${isHovered ? 2.4 : 1})`,
+                transformOrigin: `${node.x}px ${node.y}px`,
+                transition: "transform 180ms ease-out, opacity 150ms ease-out",
+                opacity: isDimmed ? 0.35 : 1,
+              }}
             >
-              {node.name}
-            </text>
-            <text
-              x={node.x}
-              y={(node.y ?? 0) + radius + 26}
-              textAnchor="middle"
-              fontSize={9}
-              className="fill-black/50 dark:fill-white/50"
-            >
-              {node.type}
-            </text>
-          </Link>
-        );
-      })}
+              <circle
+                cx={node.x}
+                cy={node.y}
+                r={radius}
+                fill={colorForType(node.type)}
+                stroke={isCenter ? "currentColor" : "none"}
+                strokeWidth={isCenter ? 2 : 0}
+                className={isCenter ? "text-black dark:text-white" : undefined}
+              />
+              {showLabel ? (
+                <>
+                  {/* Only the hovered node itself is CSS-scaled (transform: scale
+                      above), so its label font is set small here and grows with
+                      it. Neighbor labels aren't scaled, so theirs stays at normal
+                      readable size directly. */}
+                  <text
+                    x={node.x}
+                    y={(node.y ?? 0) + radius + 12}
+                    textAnchor="middle"
+                    fontSize={isHovered ? 6 : 11}
+                    className="fill-black dark:fill-white"
+                  >
+                    {node.name}
+                  </text>
+                  {isHovered ? (
+                    <text
+                      x={node.x}
+                      y={(node.y ?? 0) + radius + 21}
+                      textAnchor="middle"
+                      fontSize={5}
+                      className="fill-black/50 dark:fill-white/50"
+                    >
+                      {node.type}
+                    </text>
+                  ) : null}
+                </>
+              ) : null}
+            </Link>
+          );
+        })}
     </svg>
   );
 }
