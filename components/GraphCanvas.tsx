@@ -44,11 +44,10 @@ const DEPTH_TIERS: Record<0 | 1 | 2 | 3, { z: number; opacity: number }> = {
   3: { z: 90, opacity: 0.25 },
 };
 
-// Cascading delay per tier — the focused node moves immediately, and each
-// ring further out starts 0.1s after the one before it, so the focus
-// effect visibly ripples outward instead of every node moving at once.
-// Applies both when focusing and un-focusing.
-const DEPTH_DELAYS: Record<0 | 1 | 2 | 3, number> = { 0: 0, 1: 0.1, 2: 0.2, 3: 0.3 };
+// The focused node moves immediately; every other node's start is randomized
+// (see jitterFor) across this full range instead of being grouped into
+// tiered "waves" — so the ripple no longer moves outward in visible rings.
+const RANDOM_DELAY_RANGE = 0.35;
 
 // Simple perspective projection (scale = cameraDistance / (cameraDistance +
 // z)), so "closer" (negative z) reads as bigger and "further" (positive z)
@@ -166,19 +165,14 @@ function driftParamsFor(id: string): DriftParams {
   };
 }
 
-// Random per-node offset added on top of a tier's base cascade delay, so
-// nodes within the same "set" don't all move in perfect lockstep. Kept
-// well under the 0.1s gap between tiers (see DEPTH_DELAYS) so a jittered
-// node can never start before an earlier tier or after a later one — e.g.
-// tier 1's latest possible start (0.1 + 0.08 = 0.18s) is still well before
-// tier 2's earliest (0.2s).
-const JITTER_RANGE = 0.08;
-
-// Different salt than driftParamsFor's seed so a node's jitter isn't
-// correlated with its drift phase.
+// Stable (id-seeded, not re-randomized every render) start-time offset for
+// a non-focused node, spread across the full RANDOM_DELAY_RANGE — no tier
+// grouping, so every non-focused node's start is independently randomized.
+// Different salt than driftParamsFor's seed so this isn't correlated with
+// a node's drift phase.
 function jitterFor(id: string): number {
   const random = mulberry32(hashString(id) ^ 0x5bd1e995);
-  return random() * JITTER_RANGE;
+  return random() * RANDOM_DELAY_RANGE;
 }
 
 function subscribeReducedMotion(onChange: () => void) {
@@ -298,14 +292,6 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     nodes.map((node) => node.id),
     edges
   );
-  // Same ring computation, but anchored on the last focus point rather
-  // than the live one, purely to drive the cascade's timing (see delay
-  // below) — target scale/opacity still come from depthTiers above.
-  const delayTiers = computeDepthTiers(
-    lastHoveredId,
-    nodes.map((node) => node.id),
-    edges
-  );
 
   return (
     <svg viewBox={`${minX} ${minY} ${width} ${height}`} className="h-[500px] w-full">
@@ -360,13 +346,13 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
 
         const tier = depthTiers.get(node.id) ?? 1;
         const { z, opacity } = DEPTH_TIERS[tier];
-        // Keyed by the *last* focus point (delayTiers), not the live one,
-        // so un-focusing ripples back through the same rings it came from
-        // rather than every node suddenly sharing one "idle" delay. Each
-        // node adds its own stable jitter on top so a whole tier doesn't
-        // move in perfect lockstep, while staying within its tier's
-        // window (see JITTER_RANGE) so tier order is never violated.
-        const delay = DEPTH_DELAYS[delayTiers.get(node.id) ?? 1] + jitterFor(node.id);
+        // The (last) focused node always moves immediately; every other
+        // node gets its own randomized start time with no tier grouping,
+        // so the ripple no longer moves outward in visible rings. Keyed on
+        // lastHoveredId (persists after mouse-out) rather than the live
+        // hoveredId so un-focusing still snaps the old focus node back
+        // first, same as focusing does.
+        const delay = node.id === lastHoveredId ? 0 : jitterFor(node.id);
         // The padded hit target is only useful for a small, resting-size
         // dot — once a node is the focus (z=-100) it's already scaled up
         // large enough to target precisely, so the hit zone shrinks back
