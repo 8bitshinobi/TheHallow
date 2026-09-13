@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Row = { id: string; key: string; value: string };
 
@@ -26,6 +26,37 @@ function parseKey(key: string): { group: string | null; label: string } {
   const dotIndex = key.indexOf(".");
   if (dotIndex === -1) return { group: null, label: key };
   return { group: key.slice(0, dotIndex), label: key.slice(dotIndex + 1) };
+}
+
+/** A textarea that grows to fit its content, including soft-wrapped lines. */
+function AutoGrowTextarea({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={1}
+      className="min-h-9 flex-1 resize-none overflow-hidden rounded border border-black/15 px-2 py-1.5 text-sm leading-normal whitespace-pre-wrap dark:border-white/15 dark:bg-transparent"
+    />
+  );
 }
 
 export function PropertiesEditor({ properties, onChange }: Props) {
@@ -73,8 +104,6 @@ export function PropertiesEditor({ properties, onChange }: Props) {
 
   function renderRow(row: Row, group: string | null) {
     const { label } = parseKey(row.key);
-    const lineCount = row.value.split("\n").length;
-    const textareaRows = Math.min(Math.max(lineCount, 1), 8);
 
     return (
       <div key={row.id} className="flex gap-2">
@@ -82,14 +111,12 @@ export function PropertiesEditor({ properties, onChange }: Props) {
           value={label}
           onChange={(e) => updateKey(row.id, group, e.target.value)}
           placeholder="Field"
-          className="h-9 w-1/3 rounded border border-black/15 px-2 py-1 text-sm dark:border-white/15 dark:bg-transparent"
+          className="h-9 w-1/3 shrink-0 self-start rounded border border-black/15 px-2 py-1 text-sm dark:border-white/15 dark:bg-transparent"
         />
-        <textarea
+        <AutoGrowTextarea
           value={row.value}
-          onChange={(e) => updateValue(row.id, e.target.value)}
+          onChange={(value) => updateValue(row.id, value)}
           placeholder="Value"
-          rows={textareaRows}
-          className="flex-1 resize-y rounded border border-black/15 px-2 py-1 text-sm leading-normal whitespace-pre-wrap dark:border-white/15 dark:bg-transparent"
         />
         <button
           type="button"
