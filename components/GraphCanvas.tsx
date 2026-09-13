@@ -252,10 +252,15 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   });
 
   // Bounding box from the settled (non-drifting) layout, padded well beyond
-  // the small drift amplitude, so the viewBox itself stays still.
+  // the small drift amplitude, so the viewBox itself stays still. Padding
+  // has to comfortably fit a *focused* node's label too: at the largest
+  // scale (~3.5x, a center node) the type-label line sits (radius + 21) *
+  // scale units from the node's own center, i.e. up to ~110 units — a
+  // node near the edge of the graph's natural bounds needs that much
+  // clearance or its label clips against the viewBox.
   const xs = anchored.map((node) => node.x ?? 0);
   const ys = anchored.map((node) => node.y ?? 0);
-  const padding = 60;
+  const padding = 130;
   const minX = Math.min(...xs) - padding;
   const minY = Math.min(...ys) - padding;
   const width = Math.max(...xs) - minX + padding;
@@ -396,7 +401,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                     x={node.x}
                     y={(node.y ?? 0) + radius + 12}
                     textAnchor="middle"
-                    fontSize={isHovered ? 6 : 11}
+                    fontSize={isHovered ? 5 : 11}
                     className="fill-black dark:fill-white"
                   >
                     {node.graphLabel ?? node.name}
@@ -406,7 +411,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                       x={node.x}
                       y={(node.y ?? 0) + radius + 21}
                       textAnchor="middle"
-                      fontSize={5}
+                      fontSize={2.5}
                       className="fill-black/50 dark:fill-white/50"
                     >
                       {node.type}
