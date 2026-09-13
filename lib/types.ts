@@ -20,3 +20,7 @@ export type ConnectedObject = {
   label: string | null;
   object: Pick<HallowObject, "id" | "type" | "name">;
 };
+
+export type GraphNode = { id: string; type: string; name: string };
+export type GraphEdge = { id: string; from: string; to: string; label: string | null };
+export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] };

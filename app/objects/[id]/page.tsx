@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ConnectionList } from "@/components/ConnectionList";
 import { ConnectionPicker } from "@/components/ConnectionPicker";
@@ -37,9 +38,14 @@ export default async function ObjectDetailPage({
       <ObjectPropertiesPanel key={object.id} object={object} />
 
       <section className="space-y-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
-          Connections
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
+            Connections
+          </h2>
+          <Link href={`/objects/${object.id}/graph`} className="text-sm underline">
+            View connection graph →
+          </Link>
+        </div>
         <ConnectionPicker objectId={object.id} />
         <ConnectionList
           title="Outgoing"

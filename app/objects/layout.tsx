@@ -9,11 +9,19 @@ export default function ObjectsLayout({ children }: { children: React.ReactNode 
           <Link href="/objects" className="text-sm font-semibold">
             The Hallow Archive
           </Link>
-          <form action={signOut}>
-            <button type="submit" className="text-sm text-black/60 underline dark:text-white/60">
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-4">
+            <Link href="/objects/graph" className="text-sm text-black/60 underline dark:text-white/60">
+              Graph
+            </Link>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="text-sm text-black/60 underline dark:text-white/60"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
       {children}
