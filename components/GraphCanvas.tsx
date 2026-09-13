@@ -273,10 +273,19 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         const midX = ((from.x ?? 0) + (to.x ?? 0)) / 2;
         const midY = ((from.y ?? 0) + (to.y ?? 0)) / 2;
         const isActive = hoveredId !== null && (edge.from === hoveredId || edge.to === hoveredId);
-        const isDimmed = hoveredId !== null && !isActive;
+
+        // Same transparency rule as nodes: an edge takes the opacity of
+        // whichever endpoint is FARTHER (higher tier) from the hovered
+        // node, so a line reaching into the background fades with it.
+        // Edges touching the hovered node itself stay fully opaque so the
+        // focus reads clearly regardless of tier math.
+        const tierFrom = depthTiers.get(edge.from) ?? 1;
+        const tierTo = depthTiers.get(edge.to) ?? 1;
+        const edgeTier = Math.max(tierFrom, tierTo) as 0 | 1 | 2 | 3;
+        const opacity = isActive ? 1 : DEPTH_TIERS[edgeTier].opacity;
 
         return (
-          <g key={edge.id} style={{ transition: "opacity 150ms ease-out" }}>
+          <g key={edge.id} style={{ opacity, transition: "opacity 500ms ease-out" }}>
             <line
               x1={from.x}
               y1={from.y}
@@ -285,7 +294,6 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
               stroke="currentColor"
               strokeOpacity={isActive ? 0.6 : 0.25}
               strokeWidth={isActive ? 2 : 1.5}
-              opacity={isDimmed ? 0.25 : 1}
               className="text-black dark:text-white"
             />
             {edge.label && isActive ? (
