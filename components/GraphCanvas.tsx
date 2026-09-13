@@ -234,10 +234,13 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
 
   // Live positions = anchor + drift. Edges read from this too, so lines
   // stay attached to their nodes as they float instead of drifting apart.
-  // The hovered node itself skips drift, so its label doesn't jitter while
-  // you're trying to read it.
+  // Drift keeps running for every node regardless of hover — pausing it
+  // just for the hovered node (to stop its now-hidden label from jittering)
+  // caused a worse problem: the drift clock keeps ticking while paused, so
+  // resuming re-evaluates the sine wave at a now-arbitrary phase instead of
+  // continuing smoothly, producing a visible jump on mouse-out.
   const rendered = anchored.map((node) => {
-    if (reduceMotion || node.id === hoveredId) return node;
+    if (reduceMotion) return node;
     const drift = driftParamsFor(node.id);
     return {
       ...node,
@@ -338,13 +341,26 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         const scale =
           hoveredId !== null && tier === 1 ? SECONDARY_HOVER_SCALE : scaleForZ(z);
 
-        // Pivot on the settled (non-drifting) position, not the live
-        // drifting one — transform-origin isn't itself a transitioned
-        // property, so if it moved every drift tick it would snap the
-        // scale's visual center mid-animation instead of easing smoothly.
-        const anchor = anchoredById.get(node.id);
-        const originX = anchor?.x ?? node.x;
-        const originY = anchor?.y ?? node.y;
+        // Pivot on the node's own live (drifting) position — the same one
+        // its circle and connected lines are drawn at — so it always grows
+        // from dead-center and never visibly detaches from its edges. This
+        // only stays smooth because drift no longer pauses/resumes per
+        // hover state (that used to jump between very different phases
+        // instantly); a continuous drift's per-tick origin change is small
+        // enough to be imperceptible even though transform-origin itself
+        // isn't a transitioned property.
+        const originX = node.x;
+        const originY = node.y;
+
+        // The invisible hit-zone stays pinned to the stable anchor
+        // (unlike the visible circle/pivot above) so it doesn't wobble out
+        // from under the cursor as the node drifts — otherwise, once
+        // focused and shrunk to the node's actual small radius, drift
+        // alone could push the node outside its own hit area, causing a
+        // rapid focus/unfocus flicker.
+        const hitAnchor = anchoredById.get(node.id);
+        const hitX = hitAnchor?.x ?? node.x;
+        const hitY = hitAnchor?.y ?? node.y;
 
         return (
           <Link
@@ -366,8 +382,8 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                   pointer events. r is animatable via CSS transition same
                   as any other SVG geometry property. */}
               <circle
-                cx={node.x}
-                cy={node.y}
+                cx={hitX}
+                cy={hitY}
                 r={hitRadius}
                 fill="transparent"
                 style={{ transition: "r 500ms ease-out" }}
