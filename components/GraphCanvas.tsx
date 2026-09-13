@@ -322,10 +322,15 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         const isNeighbor = neighborIds.has(node.id);
         const showLabel = SHOW_LABELS && (isHovered || isNeighbor);
         const radius = isCenter ? 10 : 6;
-        const hitRadius = radius + 14;
 
         const tier = depthTiers.get(node.id) ?? 1;
         const { z, opacity } = DEPTH_TIERS[tier];
+        // The padded hit target is only useful for a small, resting-size
+        // dot — once a node is the focus (z=-100) it's already scaled up
+        // large enough to target precisely, so the hit zone shrinks back
+        // to the node's own radius instead of stacking padding on top of
+        // an already-enlarged circle.
+        const hitRadius = tier === 0 ? radius : radius + 14;
         // Tier 1 doubles as both "idle, nothing hovered" (stay at rest,
         // scale 1) and "secondary — a direct connection of the hovered
         // node" (pop up 50% so the immediate connections read as active
@@ -354,10 +359,19 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
               opacity,
             }}
           >
-              {/* Invisible, larger than the visible dot, so a small node is
-                  still easy to hover/click. fill="transparent" (not "none")
-                  so it still registers pointer events. */}
-              <circle cx={node.x} cy={node.y} r={hitRadius} fill="transparent" />
+              {/* Invisible, larger than the visible dot at rest so a small
+                  node is still easy to hover/click; shrinks back to the
+                  node's own size once focused (see hitRadius above).
+                  fill="transparent" (not "none") so it still registers
+                  pointer events. r is animatable via CSS transition same
+                  as any other SVG geometry property. */}
+              <circle
+                cx={node.x}
+                cy={node.y}
+                r={hitRadius}
+                fill="transparent"
+                style={{ transition: "r 500ms ease-out" }}
+              />
               <circle
                 cx={node.x}
                 cy={node.y}
