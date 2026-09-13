@@ -44,6 +44,11 @@ const DEPTH_TIERS: Record<0 | 1 | 2 | 3, { z: number; opacity: number }> = {
   3: { z: 90, opacity: 0.25 },
 };
 
+// Cascading delay per tier — the focused node moves immediately, and each
+// ring further out starts 0.2s after the one before it, so the focus
+// effect visibly ripples outward instead of every node moving at once.
+const DEPTH_DELAYS: Record<0 | 1 | 2 | 3, number> = { 0: 0, 1: 0.2, 2: 0.4, 3: 0.6 };
+
 // Simple perspective projection (scale = cameraDistance / (cameraDistance +
 // z)), so "closer" (negative z) reads as bigger and "further" (positive z)
 // as smaller. A smaller cameraDistance makes the falloff steeper (more
@@ -327,6 +332,10 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
 
         const tier = depthTiers.get(node.id) ?? 1;
         const { z, opacity } = DEPTH_TIERS[tier];
+        // Only stagger the *reveal* (something is now hovered) — snapping
+        // back to rest with the same outward ripple would read as sluggish
+        // on the way out, so mouse-leave (hoveredId === null) is instant.
+        const delay = hoveredId !== null ? DEPTH_DELAYS[tier] : 0;
         // The padded hit target is only useful for a small, resting-size
         // dot — once a node is the focus (z=-100) it's already scaled up
         // large enough to target precisely, so the hit zone shrinks back
@@ -370,7 +379,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             style={{
               transform: `scale(${scale})`,
               transformOrigin: `${originX}px ${originY}px`,
-              transition: "transform 500ms ease-out",
+              transition: `transform 500ms ease-out ${delay}s`,
             }}
           >
               {/* Invisible, larger than the visible dot at rest so a small
@@ -401,7 +410,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                 stroke={isCenter ? "currentColor" : "none"}
                 strokeWidth={isCenter ? 2 : 0}
                 className={isCenter ? "text-black dark:text-white" : undefined}
-                style={{ transition: "fill-opacity 500ms ease-out" }}
+                style={{ transition: `fill-opacity 500ms ease-out ${delay}s` }}
               />
               {showLabel ? (
                 <>
