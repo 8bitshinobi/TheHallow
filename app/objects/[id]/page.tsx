@@ -34,7 +34,7 @@ export default async function ObjectDetailPage({
         <DeleteObjectButton objectId={object.id} objectName={object.name} />
       </div>
 
-      <ObjectPropertiesPanel object={object} />
+      <ObjectPropertiesPanel key={object.id} object={object} />
 
       <section className="space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">

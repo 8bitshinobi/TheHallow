@@ -1,67 +1,154 @@
 "use client";
 
+import { useState } from "react";
+
+type Row = { id: string; key: string; value: string };
+
 type Props = {
   properties: Record<string, string>;
   onChange: (properties: Record<string, string>) => void;
 };
 
+function toRows(properties: Record<string, string>): Row[] {
+  return Object.entries(properties).map(([key, value]) => ({
+    id: crypto.randomUUID(),
+    key,
+    value,
+  }));
+}
+
+function toRecord(rows: Row[]): Record<string, string> {
+  return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+}
+
+/** "taxonomy.kingdom" -> { group: "taxonomy", label: "kingdom" }; "size" -> { group: null, label: "size" } */
+function parseKey(key: string): { group: string | null; label: string } {
+  const dotIndex = key.indexOf(".");
+  if (dotIndex === -1) return { group: null, label: key };
+  return { group: key.slice(0, dotIndex), label: key.slice(dotIndex + 1) };
+}
+
 export function PropertiesEditor({ properties, onChange }: Props) {
-  const rows = Object.entries(properties);
+  // Rows carry a stable id independent of their key text, so editing a key
+  // (including typing a "." that moves it into a group) doesn't remount the
+  // input and lose focus mid-keystroke.
+  const [rows, setRows] = useState<Row[]>(() => toRows(properties));
 
-  function updateRow(index: number, key: string, value: string) {
-    const next = [...rows];
-    next[index] = [key, value];
-    onChange(Object.fromEntries(next));
+  function commit(next: Row[]) {
+    setRows(next);
+    onChange(toRecord(next));
   }
 
-  function removeRow(index: number) {
-    const next = rows.filter((_, i) => i !== index);
-    onChange(Object.fromEntries(next));
+  function updateKey(id: string, group: string | null, label: string) {
+    const key = group ? `${group}.${label}` : label;
+    commit(rows.map((row) => (row.id === id ? { ...row, key } : row)));
   }
 
-  function addRow() {
-    onChange({ ...properties, "": "" });
+  function updateValue(id: string, value: string) {
+    commit(rows.map((row) => (row.id === id ? { ...row, value } : row)));
+  }
+
+  function removeRow(id: string) {
+    commit(rows.filter((row) => row.id !== id));
+  }
+
+  function addRow(group: string | null) {
+    commit([...rows, { id: crypto.randomUUID(), key: group ? `${group}.` : "", value: "" }]);
+  }
+
+  function addGroup() {
+    const name = window.prompt("Group name (e.g. taxonomy)")?.trim();
+    if (!name) return;
+    addRow(name);
+  }
+
+  const ungrouped = rows.filter((row) => parseKey(row.key).group === null);
+  const groupNames = Array.from(
+    new Set(
+      rows
+        .map((row) => parseKey(row.key).group)
+        .filter((group): group is string => group !== null)
+    )
+  ).sort();
+
+  function renderRow(row: Row, group: string | null) {
+    const { label } = parseKey(row.key);
+    const lineCount = row.value.split("\n").length;
+    const textareaRows = Math.min(Math.max(lineCount, 1), 8);
+
+    return (
+      <div key={row.id} className="flex gap-2">
+        <input
+          value={label}
+          onChange={(e) => updateKey(row.id, group, e.target.value)}
+          placeholder="Field"
+          className="h-9 w-1/3 rounded border border-black/15 px-2 py-1 text-sm dark:border-white/15 dark:bg-transparent"
+        />
+        <textarea
+          value={row.value}
+          onChange={(e) => updateValue(row.id, e.target.value)}
+          placeholder="Value"
+          rows={textareaRows}
+          className="flex-1 resize-y rounded border border-black/15 px-2 py-1 text-sm leading-normal whitespace-pre-wrap dark:border-white/15 dark:bg-transparent"
+        />
+        <button
+          type="button"
+          onClick={() => removeRow(row.id)}
+          className="h-9 self-start rounded px-2 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+          aria-label={`Remove ${label || "property"}`}
+        >
+          ✕
+        </button>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-2">
-      {rows.map(([key, value], index) => {
-        const lineCount = value.split("\n").length;
-        const textareaRows = Math.min(Math.max(lineCount, 1), 8);
+    <div className="space-y-3">
+      {ungrouped.length > 0 ? (
+        <div className="space-y-2">{ungrouped.map((row) => renderRow(row, null))}</div>
+      ) : null}
 
-        return (
-          <div key={index} className="flex gap-2">
-            <input
-              value={key}
-              onChange={(e) => updateRow(index, e.target.value, value)}
-              placeholder="Field"
-              className="h-9 w-1/3 rounded border border-black/15 px-2 py-1 text-sm dark:border-white/15 dark:bg-transparent"
-            />
-            <textarea
-              value={value}
-              onChange={(e) => updateRow(index, key, e.target.value)}
-              placeholder="Value"
-              rows={textareaRows}
-              className="flex-1 resize-y rounded border border-black/15 px-2 py-1 text-sm leading-normal whitespace-pre-wrap dark:border-white/15 dark:bg-transparent"
-            />
+      {groupNames.map((group) => (
+        <details
+          key={group}
+          className="rounded border border-black/10 p-2 dark:border-white/10"
+          open
+        >
+          <summary className="cursor-pointer text-sm font-medium capitalize">
+            {group} ({rows.filter((row) => parseKey(row.key).group === group).length})
+          </summary>
+          <div className="mt-2 space-y-2">
+            {rows
+              .filter((row) => parseKey(row.key).group === group)
+              .map((row) => renderRow(row, group))}
             <button
               type="button"
-              onClick={() => removeRow(index)}
-              className="h-9 self-start rounded px-2 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-              aria-label={`Remove ${key || "property"}`}
+              onClick={() => addRow(group)}
+              className="text-xs text-black/60 underline hover:text-black dark:text-white/60 dark:hover:text-white"
             >
-              ✕
+              + Add to {group}
             </button>
           </div>
-        );
-      })}
-      <button
-        type="button"
-        onClick={addRow}
-        className="text-sm text-black/60 underline hover:text-black dark:text-white/60 dark:hover:text-white"
-      >
-        + Add property
-      </button>
+        </details>
+      ))}
+
+      <div className="flex gap-4">
+        <button
+          type="button"
+          onClick={() => addRow(null)}
+          className="text-sm text-black/60 underline hover:text-black dark:text-white/60 dark:hover:text-white"
+        >
+          + Add property
+        </button>
+        <button
+          type="button"
+          onClick={addGroup}
+          className="text-sm text-black/60 underline hover:text-black dark:text-white/60 dark:hover:text-white"
+        >
+          + Add group
+        </button>
+      </div>
     </div>
   );
 }
