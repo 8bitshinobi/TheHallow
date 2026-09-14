@@ -348,7 +348,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   );
 
   return (
-    <div ref={containerRef} className="h-[500px] w-full">
+    <div ref={containerRef} className="h-[750px] w-full">
       <svg viewBox={`${vbMinX} ${vbMinY} ${vbWidth} ${vbHeight}`} className="h-full w-full">
       {edges.map((edge) => {
         const from = byId.get(edge.from);
