@@ -6,6 +6,8 @@ import {
   forceLink,
   forceManyBody,
   forceSimulation,
+  forceX,
+  forceY,
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from "d3-force";
@@ -231,9 +233,18 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           .distance(110)
           .strength(0.6)
       )
-      .force("charge", forceManyBody().strength(-260))
+      .force("charge", forceManyBody().strength(-260).distanceMax(400))
       .force("center", forceCenter(0, 0))
       .force("collide", forceCollide(46))
+      // Disconnected components (no edges between them) have nothing else
+      // pulling them together, so unbounded repulsion alone would let them
+      // drift apart indefinitely — forceCenter only corrects the overall
+      // centroid, not each component individually. A weak pull toward the
+      // origin keeps separate clusters in the same neighborhood instead of
+      // spreading the viewBox out until every cluster looks like a tiny
+      // speck in mostly empty space.
+      .force("x", forceX(0).strength(0.03))
+      .force("y", forceY(0).strength(0.03))
       .stop();
 
     for (let i = 0; i < 300; i++) simulation.tick();

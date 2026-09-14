@@ -29,6 +29,19 @@ v1 scope (per the original plan): Scott-only admin app, no player accounts/sugge
 
 ## Data migrated so far
 
+**The Dimension — RPG Setting Bible** (from Notion, "Art Story Design" workspace): fully migrated as 22 linked objects, via `scripts/migrate/dimension-setting-bible.mjs`.
+- 7 lore (Setting Overview, The Hallow — World Itself, Cosmology & The Singularity, The Filtering System, Terminal Emotions & The Loop, Regions & Locations, The Surface Layer — Factions & Greed)
+- 7 more lore, tagged `category: "Terminal Archetype"` (The Power Hungry, The Stoic Warrior, The Perfectionist, The Martyr, The Nostalgic, The Cynic, The Collector), each with a `protector_type` (Exile/Manager/Firefighter)
+- 1 npc (The Wizard — true identity withheld per the setting's own reveal structure)
+- 2 place (The Graveyard of Broken Promises; The Loop Region (Mother & Son), flagged `status: in_development`)
+- 1 production_notes (Inspirations & Tone — meta-commentary, not in-world, same treatment as the Emberdart PDF's Lumo notes)
+- 1 campaign_arc (new type — The Surface Arc — Levels 1–10 & The Fabricated Mythologies)
+- 4 organization stubs (Witches of Astra, Custodians of the Veil, Verdant Iron, Brothers Quimby) — named in the Surface Arc's example thread but their full detail lives in Capacities, not yet migrated; each flagged `status: stub — pending Capacities migration`
+
+Decisions made for this pass: per-category object types (not generic `lore` for everything); whole Setting Bible in one pass (it's tightly cross-referenced); the **Game Mechanics — DC20 Integration** page was explicitly skipped, per CLAUDE.md's DC20-is-a-separate-pool rule — revisit once a dedicated DC20-supplement workflow exists.
+
+Also found two pages not listed in the previous handoff note (only referenced in the Setting Bible's Quick Navigation, found via full fetch): "The Filtering System" (migrated) and "The Dimension as a Place" (does not actually exist as a page yet — aspirational nav bullet only, nothing to migrate).
+
 **Codex Chimerical — Emberdart** (from `Emberdart.md` and later `Emberdart.pdf`, which turned out to be the same content plus some extras): fully migrated as 18 linked objects —
 - 1 creature (Emberdart, properties grouped into taxonomy/vitals/mechanics/narrative)
 - 3 npc (Rangard Ricker, Succa Dogwood, Panthy Weatherbee)
@@ -44,14 +57,13 @@ Migration scripts live in `scripts/migrate/` (`lib.mjs` has the reusable `findOr
 
 ## In progress / paused
 
-**Notion migration**: Scott wants to bring in content from his Notion workspace ("Art Story Design") next. Found a substantial, already-structured source: **"🌀 The Dimension — RPG Setting Bible"**, with ~9-10 pages (Cosmology & The Singularity, The Wizard — Origin of the Dimension, The Filtering System, Terminal Emotions & The Loop, Regions & Locations, The Surface Layer — Factions & Greed, Game Mechanics — DC20 Integration, Inspirations & Tone, plus "The Hallow — The World Itself" and its child "The Surface Arc — Levels 1-10"). This directly resolves CLAUDE.md's open question "whether The Dimension needs its own content" — yes, clearly.
+**Notion migration**: The Dimension — RPG Setting Bible is done (see "Data migrated so far" above). This directly resolves CLAUDE.md's open question "whether The Dimension needs its own content" — yes, clearly.
 
-**Paused, not started**, pending Scott's decisions on:
-1. Object typing — one type per category (cosmology, region, faction, game_mechanic, npc for The Wizard, etc.) vs. everything as generic `lore`.
-2. Scope — the whole Setting Bible in one pass (it's tightly cross-referenced, so partial migration leaves dangling references) vs. starting smaller with just "The Hallow — World Itself".
-3. The DC20 Integration page specifically — CLAUDE.md says DC20 should be a separate-but-linked pool, not merged into Hallow taxonomy, so this needs deliberate handling (own type + linked edge, or skip for now).
+Not yet touched from Notion:
+- **Game Mechanics — DC20 Integration** page — deliberately skipped per CLAUDE.md's DC20-is-a-separate-pool rule. Revisit once a dedicated DC20-supplement workflow exists (own type + linked edge, most likely).
+- Rest of the "Art Story Design" Notion workspace beyond the Setting Bible — not yet surveyed.
 
-Next session: ask these questions again (they were dismissed mid-turn last time, not answered) before touching Notion content.
+Also still open, from Capacities (not Notion): the four organization stubs created during this pass (Witches of Astra, Custodians of the Veil, Verdant Iron, Brothers Quimby) need their full detail — vault/lock mechanics, NPCs, encounters — migrated in from Capacities and merged into the existing stub objects (`findOrCreateObject` will merge safely, existing stub properties win on conflict so re-run is safe, but the stub's placeholder `description`/`status` properties should get overwritten with real content, not just merged around).
 
 ## Known rough edges / deferred
 
