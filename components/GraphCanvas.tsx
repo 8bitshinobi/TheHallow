@@ -250,22 +250,22 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         "link",
         forceLink<PositionedNode, SimLink>(simLinks)
           .id((node) => node.id)
-          .distance(35)
+          .distance(26)
           .strength(0.6)
       )
-      // Tightened further — pulls each cluster's own nodes closer together
-      // (less repulsion, shorter links, a smaller collision floor) so a
-      // cluster's footprint shrinks and the panel-filling scale factor (see
-      // the viewBox-matching logic below) goes up accordingly, making the
-      // whole graph read bigger without changing the panel itself. The
-      // floor here (22) isn't arbitrary: a resting node's padded hover hit
-      // zone is radius 6 + 14 = 20px (see hitRadius below), so two adjacent
-      // hit zones only avoid overlapping — and hover not going flickery —
-      // once node centers land at least 40px apart, i.e. collide >= 20.
-      // 22 keeps a couple of px of margin on top of that floor.
-      .force("charge", forceManyBody().strength(-70).distanceMax(180))
+      // Tightened further, deliberately below the old hit-zone-safety floor
+      // (22 = 2x the resting hit-zone radius) now that a hovered node's
+      // growth actively pushes overlapping neighbors aside instead of just
+      // relying on static collision distance (see pushById below) — that's
+      // what makes the push effect ever have anything to do, since at the
+      // old floor no hover-scaled pair could ever get close enough to
+      // overlap in the first place. Trade-off accepted deliberately: in the
+      // densest spots, two resting (unhovered) nodes' padded hit zones can
+      // now overlap slightly, which can occasionally flicker between them
+      // on hover.
+      .force("charge", forceManyBody().strength(-50).distanceMax(130))
       .force("center", forceCenter(0, 0))
-      .force("collide", forceCollide(22))
+      .force("collide", forceCollide(12))
       // Disconnected components (no edges between them) have nothing else
       // pulling them together, so unbounded repulsion alone would let them
       // drift apart indefinitely — forceCenter only corrects the overall
@@ -273,8 +273,8 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
       // origin keeps separate clusters in the same neighborhood instead of
       // spreading the viewBox out until every cluster looks like a tiny
       // speck in mostly empty space.
-      .force("x", forceX(0).strength(0.08))
-      .force("y", forceY(0).strength(0.08))
+      .force("x", forceX(0).strength(0.1))
+      .force("y", forceY(0).strength(0.1))
       .stop();
 
     for (let i = 0; i < 300; i++) simulation.tick();
@@ -375,34 +375,37 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   // very high-degree hub) from producing a jarring, oversized shove.
   const MAX_PUSH = 40;
 
-  // The hovered node grows (scaleFor) but never moves; only its direct
-  // neighbors (which also grow, at the smaller SECONDARY_HOVER_SCALE) get
-  // shoved outward, by however much their now-larger circles would
-  // otherwise overlap the hovered node's. This is a one-shot geometric
-  // correction recomputed from the settled layout, not a live physics
-  // re-simulation — cheap (bounded by neighbor count) and stable.
+  // The hovered node grows (scaleFor) but never moves; anything else that
+  // now overlaps its bigger circle gets shoved outward by exactly that
+  // overlap. Checked against every other node, not just graph-linked
+  // neighbors — a node from a totally different (even disconnected)
+  // cluster can end up spatially close by coincidence, especially since
+  // separate components get pulled toward the same neighborhood (see the
+  // "x"/"y" centering force above), and it should get out of the way too.
+  // This is a one-shot geometric correction recomputed from the settled
+  // layout, not a live physics re-simulation — cheap (linear in node
+  // count) and stable.
   const pushById = new Map<string, { dx: number; dy: number }>();
   if (hoveredId) {
     const hub = byId.get(hoveredId);
     const hubRadius = radiusFor(hoveredId) * scaleFor(hoveredId);
     if (hub) {
-      for (const id of neighborIds) {
-        const neighbor = byId.get(id);
-        if (!neighbor) continue;
-        const neighborRadius = radiusFor(id) * scaleFor(id);
-        const dx = (neighbor.x ?? 0) - (hub.x ?? 0);
-        const dy = (neighbor.y ?? 0) - (hub.y ?? 0);
+      for (const node of rendered) {
+        if (node.id === hoveredId) continue;
+        const otherRadius = radiusFor(node.id) * scaleFor(node.id);
+        const dx = (node.x ?? 0) - (hub.x ?? 0);
+        const dy = (node.y ?? 0) - (hub.y ?? 0);
         const dist = Math.hypot(dx, dy);
-        const desiredMin = hubRadius + neighborRadius + PUSH_GAP;
+        const desiredMin = hubRadius + otherRadius + PUSH_GAP;
         if (dist >= desiredMin) continue;
         // Degenerate case (near-zero distance): push in a stable,
         // id-seeded direction instead of an undefined one.
         const [ux, uy] =
           dist > 0.01
             ? [dx / dist, dy / dist]
-            : [Math.cos(hashString(id)), Math.sin(hashString(id))];
+            : [Math.cos(hashString(node.id)), Math.sin(hashString(node.id))];
         const pushAmount = Math.min(desiredMin - dist, MAX_PUSH);
-        pushById.set(id, { dx: ux * pushAmount, dy: uy * pushAmount });
+        pushById.set(node.id, { dx: ux * pushAmount, dy: uy * pushAmount });
       }
     }
   }
@@ -489,25 +492,32 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         // hoveredId so un-focusing still snaps the old focus node back
         // first, same as focusing does.
         const delay = delayFor(node.id);
+        // A hovered node grows but never moves; anything overlapping its
+        // bigger circle gets shoved outward — see pushById above.
+        // Everything unaffected (the vast majority of nodes, most renders)
+        // has zero push and this is just the drifting position, unchanged.
+        const visual = visualById.get(node.id) ?? { x: node.x ?? 0, y: node.y ?? 0 };
+        const push = pushById.get(node.id);
+        const pushMagnitude = push ? Math.hypot(push.dx, push.dy) : 0;
+
         // The padded hit target is only useful for a small, resting-size
         // dot — once a node is the focus (z=-100) it's already scaled up
         // large enough to target precisely, so the hit zone shrinks back
         // to the node's own radius instead of stacking padding on top of
-        // an already-enlarged circle.
-        const hitRadius = tier === 0 ? radius : radius + 14;
+        // an already-enlarged circle. When pushed, the hit zone's *center*
+        // deliberately stays anchored (see hitX/hitY below) rather than
+        // following the push, to avoid a feedback loop — hovering a pushed
+        // neighbor would make IT the new hub, snapping its own push back
+        // to zero and yanking its hit zone out from under the cursor mid
+        // hover. Instead its radius grows by the push amount, which is
+        // enough for a fixed circle to still fully cover a dot that has
+        // moved directly away from it by that same amount.
+        const hitRadius = tier === 0 ? radius : radius + 14 + pushMagnitude;
         // Tier 1 doubles as both "idle, nothing hovered" (stay at rest,
         // scale 1) and "secondary — a direct connection of the hovered
         // node" (pop up 50% so the immediate connections read as active
         // participants in the focus, not just unchanged background).
         const scale = scaleFor(node.id);
-
-        // A hovered node grows but never moves; its direct neighbors also
-        // grow (at the smaller secondary scale) and get shoved outward by
-        // however much that growth would otherwise overlap the hovered
-        // node's own circle — see pushById above. Everything else (the
-        // vast majority of nodes, most renders) has zero push and this is
-        // just the drifting position, unchanged.
-        const visual = visualById.get(node.id) ?? { x: node.x ?? 0, y: node.y ?? 0 };
 
         // Pivot on the node's own live (drifting + pushed) position — the
         // same one its circle and connected lines are drawn at — so it
