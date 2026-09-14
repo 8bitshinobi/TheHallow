@@ -12,7 +12,7 @@ import {
   type SimulationNodeDatum,
 } from "d3-force";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { GraphEdge, GraphNode } from "@/lib/types";
 
 type PositionedNode = GraphNode & SimulationNodeDatum;
@@ -218,6 +218,26 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   // node suddenly sharing one "idle" tier the moment hover ends.
   const [lastHoveredId, setLastHoveredId] = useState<string | null>(null);
 
+  // Measured so the viewBox can be widened/heightened to match the panel's
+  // actual aspect ratio (see below) instead of relying on preserveAspectRatio
+  // to reconcile a mismatch — "meet" letterboxes (empty bars), "slice" crops.
+  // Neither is needed once the viewBox itself is shaped like the panel.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(
+    null
+  );
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      setContainerSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   // Settled layout — computed once per graph, not per animation frame.
   const anchored = useMemo<PositionedNode[]>(() => {
     if (nodes.length === 0) return [];
@@ -296,6 +316,29 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   const width = Math.max(...xs) - minX + padding;
   const height = Math.max(...ys) - minY + padding;
 
+  // Grow the viewBox on whichever axis is "too narrow" so its aspect ratio
+  // matches the measured panel exactly — once they match, there's nothing
+  // left for preserveAspectRatio to reconcile, so nodes near the graph's
+  // natural edge never get cropped, and the graph still fills the panel
+  // instead of shrinking to fit inside a mismatched shape.
+  let vbMinX = minX;
+  let vbMinY = minY;
+  let vbWidth = width;
+  let vbHeight = height;
+  if (containerSize && containerSize.width > 0 && containerSize.height > 0) {
+    const containerAspect = containerSize.width / containerSize.height;
+    const contentAspect = width / height;
+    if (containerAspect > contentAspect) {
+      const targetWidth = height * containerAspect;
+      vbMinX = minX - (targetWidth - width) / 2;
+      vbWidth = targetWidth;
+    } else {
+      const targetHeight = width / containerAspect;
+      vbMinY = minY - (targetHeight - height) / 2;
+      vbHeight = targetHeight;
+    }
+  }
+
   const byId = new Map(rendered.map((node) => [node.id, node]));
   const anchoredById = new Map(anchored.map((node) => [node.id, node]));
   const depthTiers = computeDepthTiers(
@@ -305,18 +348,8 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   );
 
   return (
-    <svg
-      viewBox={`${minX} ${minY} ${width} ${height}`}
-      // Default "meet" scales the graph down to fit entirely inside the
-      // panel, which letterboxes hard when the panel is a wide rectangle
-      // and the graph's own bounding box is closer to square — most of the
-      // panel ends up empty on the sides. "slice" scales up to cover the
-      // whole panel instead (cropping a little at the far edges, where
-      // padding already keeps content clear of it), so the graph actually
-      // fills the space instead of floating small in the middle of it.
-      preserveAspectRatio="xMidYMid slice"
-      className="h-[500px] w-full"
-    >
+    <div ref={containerRef} className="h-[500px] w-full">
+      <svg viewBox={`${vbMinX} ${vbMinY} ${vbWidth} ${vbHeight}`} className="h-full w-full">
       {edges.map((edge) => {
         const from = byId.get(edge.from);
         const to = byId.get(edge.to);
@@ -491,6 +524,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             </Link>
           );
         })}
-    </svg>
+      </svg>
+    </div>
   );
 }
