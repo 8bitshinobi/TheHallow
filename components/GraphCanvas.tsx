@@ -357,14 +357,82 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     edges
   );
 
+  function radiusFor(id: string): number {
+    return id === centerId ? 10 : 6;
+  }
+
+  function scaleFor(id: string): number {
+    const tier = depthTiers.get(id) ?? 1;
+    if (hoveredId !== null && tier === 1) return SECONDARY_HOVER_SCALE;
+    return scaleForZ(DEPTH_TIERS[tier].z);
+  }
+
+  // Gap kept between two circles' edges once "touching", beyond exactly
+  // meeting — a little breathing room instead of a razor-thin seam.
+  const PUSH_GAP = 6;
+  // Safety cap — current force parameters shouldn't need anywhere near
+  // this much push, but keeps a future tighter resting layout (or a
+  // very high-degree hub) from producing a jarring, oversized shove.
+  const MAX_PUSH = 40;
+
+  // The hovered node grows (scaleFor) but never moves; only its direct
+  // neighbors (which also grow, at the smaller SECONDARY_HOVER_SCALE) get
+  // shoved outward, by however much their now-larger circles would
+  // otherwise overlap the hovered node's. This is a one-shot geometric
+  // correction recomputed from the settled layout, not a live physics
+  // re-simulation — cheap (bounded by neighbor count) and stable.
+  const pushById = new Map<string, { dx: number; dy: number }>();
+  if (hoveredId) {
+    const hub = byId.get(hoveredId);
+    const hubRadius = radiusFor(hoveredId) * scaleFor(hoveredId);
+    if (hub) {
+      for (const id of neighborIds) {
+        const neighbor = byId.get(id);
+        if (!neighbor) continue;
+        const neighborRadius = radiusFor(id) * scaleFor(id);
+        const dx = (neighbor.x ?? 0) - (hub.x ?? 0);
+        const dy = (neighbor.y ?? 0) - (hub.y ?? 0);
+        const dist = Math.hypot(dx, dy);
+        const desiredMin = hubRadius + neighborRadius + PUSH_GAP;
+        if (dist >= desiredMin) continue;
+        // Degenerate case (near-zero distance): push in a stable,
+        // id-seeded direction instead of an undefined one.
+        const [ux, uy] =
+          dist > 0.01
+            ? [dx / dist, dy / dist]
+            : [Math.cos(hashString(id)), Math.sin(hashString(id))];
+        const pushAmount = Math.min(desiredMin - dist, MAX_PUSH);
+        pushById.set(id, { dx: ux * pushAmount, dy: uy * pushAmount });
+      }
+    }
+  }
+
+  function delayFor(id: string): number {
+    return id === lastHoveredId ? 0 : jitterFor(id);
+  }
+
+  const visualById = new Map(
+    rendered.map((node) => {
+      const push = pushById.get(node.id);
+      return [
+        node.id,
+        { x: (node.x ?? 0) + (push?.dx ?? 0), y: (node.y ?? 0) + (push?.dy ?? 0) },
+      ] as const;
+    })
+  );
+
   return (
     <div ref={containerRef} className="h-[750px] w-full">
       <svg viewBox={`${vbMinX} ${vbMinY} ${vbWidth} ${vbHeight}`} className="h-full w-full">
       {edges.map((edge) => {
-        const from = byId.get(edge.from);
-        const to = byId.get(edge.to);
+        const from = visualById.get(edge.from);
+        const to = visualById.get(edge.to);
         if (!from || !to) return null;
         const isActive = hoveredId !== null && (edge.from === hoveredId || edge.to === hoveredId);
+        // Only a neighbor endpoint ever gets pushed (the hovered node
+        // itself never moves), so borrow whichever side that is for the
+        // line's own move transition, keeping it in step with that node.
+        const edgeDelay = edge.from === hoveredId ? delayFor(edge.to) : delayFor(edge.from);
 
         // Same transparency rule as nodes: an edge takes the opacity of
         // whichever endpoint is FARTHER (higher tier) from the hovered
@@ -392,6 +460,9 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
               strokeOpacity={isActive ? 1 : 0.25}
               strokeWidth={isActive ? 2 : 1.5}
               className={isActive ? undefined : "text-black dark:text-white"}
+              style={{
+                transition: `x1 500ms cubic-bezier(0.16, 1, 0.3, 1) ${edgeDelay}s, y1 500ms cubic-bezier(0.16, 1, 0.3, 1) ${edgeDelay}s, x2 500ms cubic-bezier(0.16, 1, 0.3, 1) ${edgeDelay}s, y2 500ms cubic-bezier(0.16, 1, 0.3, 1) ${edgeDelay}s`,
+              }}
             />
           </g>
         );
@@ -407,17 +478,17 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         const isHovered = node.id === hoveredId;
         const isNeighbor = neighborIds.has(node.id);
         const showLabel = SHOW_LABELS && (isHovered || isNeighbor);
-        const radius = isCenter ? 10 : 6;
+        const radius = radiusFor(node.id);
 
         const tier = depthTiers.get(node.id) ?? 1;
-        const { z, opacity } = DEPTH_TIERS[tier];
+        const { opacity } = DEPTH_TIERS[tier];
         // The (last) focused node always moves immediately; every other
         // node gets its own randomized start time with no tier grouping,
         // so the ripple no longer moves outward in visible rings. Keyed on
         // lastHoveredId (persists after mouse-out) rather than the live
         // hoveredId so un-focusing still snaps the old focus node back
         // first, same as focusing does.
-        const delay = node.id === lastHoveredId ? 0 : jitterFor(node.id);
+        const delay = delayFor(node.id);
         // The padded hit target is only useful for a small, resting-size
         // dot — once a node is the focus (z=-100) it's already scaled up
         // large enough to target precisely, so the hit zone shrinks back
@@ -428,19 +499,26 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         // scale 1) and "secondary — a direct connection of the hovered
         // node" (pop up 50% so the immediate connections read as active
         // participants in the focus, not just unchanged background).
-        const scale =
-          hoveredId !== null && tier === 1 ? SECONDARY_HOVER_SCALE : scaleForZ(z);
+        const scale = scaleFor(node.id);
 
-        // Pivot on the node's own live (drifting) position — the same one
-        // its circle and connected lines are drawn at — so it always grows
-        // from dead-center and never visibly detaches from its edges. This
-        // only stays smooth because drift no longer pauses/resumes per
-        // hover state (that used to jump between very different phases
-        // instantly); a continuous drift's per-tick origin change is small
-        // enough to be imperceptible even though transform-origin itself
-        // isn't a transitioned property.
-        const originX = node.x;
-        const originY = node.y;
+        // A hovered node grows but never moves; its direct neighbors also
+        // grow (at the smaller secondary scale) and get shoved outward by
+        // however much that growth would otherwise overlap the hovered
+        // node's own circle — see pushById above. Everything else (the
+        // vast majority of nodes, most renders) has zero push and this is
+        // just the drifting position, unchanged.
+        const visual = visualById.get(node.id) ?? { x: node.x ?? 0, y: node.y ?? 0 };
+
+        // Pivot on the node's own live (drifting + pushed) position — the
+        // same one its circle and connected lines are drawn at — so it
+        // always grows from dead-center and never visibly detaches from
+        // its edges. This only stays smooth because drift no longer
+        // pauses/resumes per hover state (that used to jump between very
+        // different phases instantly); a continuous drift's per-tick
+        // origin change is small enough to be imperceptible even though
+        // transform-origin itself isn't a transitioned property.
+        const originX = visual.x;
+        const originY = visual.y;
 
         // The invisible hit-zone stays pinned to the stable anchor
         // (unlike the visible circle/pivot above) so it doesn't wobble out
@@ -488,17 +566,27 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                   "behind") in the SVG. Without this, a dimmed node's own
                   translucent fill let connection lines show straight
                   through its own body. */}
-              <circle cx={node.x} cy={node.y} r={radius} fill="var(--background)" />
               <circle
-                cx={node.x}
-                cy={node.y}
+                cx={visual.x}
+                cy={visual.y}
+                r={radius}
+                fill="var(--background)"
+                style={{
+                  transition: `cx 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s, cy 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
+                }}
+              />
+              <circle
+                cx={visual.x}
+                cy={visual.y}
                 r={radius}
                 fill={colorForType(node.type)}
                 fillOpacity={opacity}
                 stroke={isCenter ? "currentColor" : "none"}
                 strokeWidth={isCenter ? 2 : 0}
                 className={isCenter ? "text-black dark:text-white" : undefined}
-                style={{ transition: `fill-opacity 500ms ease-out ${delay}s` }}
+                style={{
+                  transition: `fill-opacity 500ms ease-out ${delay}s, cx 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s, cy 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
+                }}
               />
               {showLabel ? (
                 <>
@@ -508,19 +596,22 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
                       Chosen so the scaled result reads focus (5*3.5=17.5)
                       clearly bigger than secondary (7*1.8=12.6). */}
                   <text
-                    x={node.x}
-                    y={(node.y ?? 0) + radius + 12}
+                    x={visual.x}
+                    y={visual.y + radius + 12}
                     textAnchor="middle"
                     fontSize={isHovered ? 5 : 7}
                     opacity={opacity}
                     className="fill-black dark:fill-white"
+                    style={{
+                      transition: `x 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s, y 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
+                    }}
                   >
                     {node.graphLabel ?? node.name}
                   </text>
                   {isHovered ? (
                     <text
-                      x={node.x}
-                      y={(node.y ?? 0) + radius + 16}
+                      x={visual.x}
+                      y={visual.y + radius + 16}
                       textAnchor="middle"
                       fontSize={2.5}
                       opacity={opacity}
