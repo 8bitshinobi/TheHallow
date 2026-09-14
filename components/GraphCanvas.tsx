@@ -114,6 +114,39 @@ function colorForType(type: string): string {
   return PALETTE[hashString(type) % PALETTE.length];
 }
 
+type Bounds = { xMin: number; xMax: number; yMin: number; yMax: number };
+
+// A custom d3-force "wall": each tick, clamp every node back inside the box
+// and zero out whatever velocity component was driving it further past the
+// edge — a node stops dead at the wall instead of jittering against it or
+// (with nothing clamped) drifting out into empty canvas indefinitely.
+function forceBounds(bounds: Bounds) {
+  let nodes: (SimulationNodeDatum & { vx?: number; vy?: number })[] = [];
+  function force() {
+    for (const n of nodes) {
+      if (n.x === undefined || n.y === undefined) continue;
+      if (n.x < bounds.xMin) {
+        n.x = bounds.xMin;
+        if (n.vx !== undefined && n.vx < 0) n.vx = 0;
+      } else if (n.x > bounds.xMax) {
+        n.x = bounds.xMax;
+        if (n.vx !== undefined && n.vx > 0) n.vx = 0;
+      }
+      if (n.y < bounds.yMin) {
+        n.y = bounds.yMin;
+        if (n.vy !== undefined && n.vy < 0) n.vy = 0;
+      } else if (n.y > bounds.yMax) {
+        n.y = bounds.yMax;
+        if (n.vy !== undefined && n.vy > 0) n.vy = 0;
+      }
+    }
+  }
+  force.initialize = (n: typeof nodes) => {
+    nodes = n;
+  };
+  return force;
+}
+
 // #rrggbb -> "r, g, b", so callers can build an rgba(...) string at
 // whatever opacity the current depth tier calls for.
 function hexToRgb(hex: string): string {
@@ -189,6 +222,16 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     return id === centerId ? 10 : 6;
   }
 
+  // A square "wall" the layout can't spread past, sized to roughly match
+  // (with room to breathe) how much space this many nodes naturally settle
+  // into — a fixed floor so a small graph doesn't get squeezed, growing
+  // with node count so a much bigger graph still gets a proportionally
+  // bigger box rather than a fixed one that would over-compress it.
+  const bounds = useMemo<Bounds>(() => {
+    const half = Math.max(140, Math.sqrt(nodes.length) * 28);
+    return { xMin: -half, xMax: half, yMin: -half, yMax: half };
+  }, [nodes.length]);
+
   const nodeIds = useMemo(() => nodes.map((n) => n.id), [nodes]);
   const depthTiers = useMemo(
     () => computeDepthTiers(hoveredId, nodeIds, edges),
@@ -248,9 +291,13 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     if (link && "distance" in link) {
       (link as unknown as { distance: (d: number) => void }).distance(26);
     }
+    // The "wall": registered alongside the other forces (not deferred until
+    // after settling) so it's a real constraint on how the layout can
+    // develop, not just a box drawn around wherever things ended up.
+    fg.d3Force("bounds", forceBounds(bounds));
     fg.d3ReheatSimulation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graphData]);
+  }, [graphData, bounds]);
 
   // Camera framing — the engine has no built-in "fit to content" on its
   // own; left alone it renders at a fixed 1 graph-unit = 1 pixel scale
@@ -287,6 +334,22 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             if (hasFitRef.current) return;
             hasFitRef.current = true;
             fgRef.current?.zoomToFit(400, 40);
+          }}
+          onRenderFramePre={(ctx) => {
+            // ctx is already in graph-coordinate space here (same space
+            // node.x/node.y are drawn in), so the wall's own bounds can be
+            // stroked directly with no conversion.
+            ctx.save();
+            ctx.strokeStyle = "rgba(128, 128, 128, 0.35)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.strokeRect(
+              bounds.xMin,
+              bounds.yMin,
+              bounds.xMax - bounds.xMin,
+              bounds.yMax - bounds.yMin
+            );
+            ctx.restore();
           }}
           nodeLabel={() => ""}
           onNodeHover={(node) => setHoveredId((node as FGNode | null)?.id ?? null)}
