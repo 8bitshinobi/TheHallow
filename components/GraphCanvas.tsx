@@ -1,22 +1,14 @@
 "use client";
 
-import {
-  forceCenter,
-  forceCollide,
-  forceLink,
-  forceManyBody,
-  forceSimulation,
-  forceX,
-  forceY,
-  type SimulationLinkDatum,
-  type SimulationNodeDatum,
-} from "d3-force";
-import Link from "next/link";
+import { forceCollide, forceX, forceY, type SimulationNodeDatum } from "d3-force";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { ForceGraphMethods } from "react-force-graph-2d";
 import type { GraphEdge, GraphNode } from "@/lib/types";
 
-type PositionedNode = GraphNode & SimulationNodeDatum;
-type SimLink = SimulationLinkDatum<PositionedNode>;
+// Canvas/WebGL only — no DOM to render on the server.
+const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
 
 type Props = {
   nodes: GraphNode[];
@@ -24,21 +16,14 @@ type Props = {
   centerId?: string;
   // "recenter": clicking a neighbor navigates to *its* graph view (the
   // center node instead links to its own detail page). "detail": every
-  // node links straight to its detail page. Serializable props only —
-  // this component is rendered from a Server Component, so a function
-  // prop like a getHref callback can't cross that boundary.
+  // node links straight to its detail page.
   linkMode: "recenter" | "detail";
 };
 
-// Hover/neighbor labels use each node's short graphLabel (1-2 words,
-// sourced from properties.label or a fallback truncation — see
-// lib/objects.ts) instead of the full name, to avoid the overlap that
-// forced these off originally.
-const SHOW_LABELS = true;
-
 // Depth tiers by graph distance from the hovered node: 0 = the hovered node
 // itself, 1 = its direct connections, 2 = two hops out, 3 = everything else.
-// z is a "distance from camera" value (negative = closer).
+// z is a "distance from camera" value (negative = closer), reused for a
+// simple perspective scale below.
 const DEPTH_TIERS: Record<0 | 1 | 2 | 3, { z: number; opacity: number }> = {
   0: { z: -100, opacity: 1 },
   1: { z: 0, opacity: 0.75 },
@@ -46,15 +31,9 @@ const DEPTH_TIERS: Record<0 | 1 | 2 | 3, { z: number; opacity: number }> = {
   3: { z: 90, opacity: 0.25 },
 };
 
-// The focused node moves immediately; every other node's start is randomized
-// (see jitterFor) across this full range instead of being grouped into
-// tiered "waves" — so the ripple no longer moves outward in visible rings.
-const RANDOM_DELAY_RANGE = 0.35;
-
 // Simple perspective projection (scale = cameraDistance / (cameraDistance +
 // z)), so "closer" (negative z) reads as bigger and "further" (positive z)
-// as smaller. A smaller cameraDistance makes the falloff steeper (more
-// size contrast between tiers) at the cost of a more extreme focus scale.
+// as smaller.
 const CAMERA_DISTANCE = 140;
 
 function scaleForZ(z: number): number {
@@ -135,46 +114,11 @@ function colorForType(type: string): string {
   return PALETTE[hashString(type) % PALETTE.length];
 }
 
-// Deterministic RNG seeded from a node id, so each node gets a stable
-// (not re-randomized every render) drift pattern.
-function mulberry32(seed: number) {
-  return function random() {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-type DriftParams = {
-  ampX: number;
-  ampY: number;
-  freqX: number;
-  freqY: number;
-  phaseX: number;
-  phaseY: number;
-};
-
-function driftParamsFor(id: string): DriftParams {
-  const random = mulberry32(hashString(id));
-  return {
-    ampX: 3 + random() * 3, // px
-    ampY: 3 + random() * 3,
-    freqX: 0.15 + random() * 0.15, // slow — a full cycle every ~20-40s
-    freqY: 0.15 + random() * 0.15,
-    phaseX: random() * Math.PI * 2,
-    phaseY: random() * Math.PI * 2,
-  };
-}
-
-// Stable (id-seeded, not re-randomized every render) start-time offset for
-// a non-focused node, spread across the full RANDOM_DELAY_RANGE — no tier
-// grouping, so every non-focused node's start is independently randomized.
-// Different salt than driftParamsFor's seed so this isn't correlated with
-// a node's drift phase.
-function jitterFor(id: string): number {
-  const random = mulberry32(hashString(id) ^ 0x5bd1e995);
-  return random() * RANDOM_DELAY_RANGE;
+// #rrggbb -> "r, g, b", so callers can build an rgba(...) string at
+// whatever opacity the current depth tier calls for.
+function hexToRgb(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
 }
 
 function subscribeReducedMotion(onChange: () => void) {
@@ -191,37 +135,35 @@ function useReducedMotion(): boolean {
   );
 }
 
-/** Subtle per-node drift (Lissajous-style, from a couple of desynced sine waves) applied on top of the settled force-layout position, so idle nodes feel alive rather than frozen. */
-function useDriftClock(enabled: boolean) {
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    if (!enabled) return;
-    const interval = setInterval(() => setTick((t) => t + 1), 100);
-    return () => clearInterval(interval);
-  }, [enabled]);
-
-  return tick / 10; // seconds elapsed, at 10 updates/sec
+// Canvas fillStyle doesn't understand CSS custom properties the way an SVG
+// `fill` attribute does — "var(--background)" is just an invalid color
+// string on a 2D context. --background itself only ever changes via the
+// "prefers-color-scheme" media query (see globals.css), not a runtime
+// class toggle, so re-reading it on that query's change event keeps this
+// in sync with the OS theme without polling.
+function subscribeColorScheme(onChange: () => void) {
+  const mql = window.matchMedia("(prefers-color-scheme: dark)");
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
 }
 
+function readBackgroundColor(): string {
+  return getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
+}
+
+function useBackgroundColor(): string {
+  return useSyncExternalStore(subscribeColorScheme, readBackgroundColor, () => "#ffffff");
+}
+
+type FGNode = GraphNode & { x?: number; y?: number };
+
 export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
-  function hrefFor(id: string): string {
-    if (linkMode === "detail" || id === centerId) return `/objects/${id}`;
-    return `/objects/${id}/graph`;
-  }
-
+  const router = useRouter();
   const reduceMotion = useReducedMotion();
-  const t = useDriftClock(!reduceMotion);
+  const backgroundColor = useBackgroundColor();
+  const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  // Kept even after mouse-out (unlike hoveredId) so the un-focus animation
-  // can cascade back through the same rings it came from, instead of every
-  // node suddenly sharing one "idle" tier the moment hover ends.
-  const [lastHoveredId, setLastHoveredId] = useState<string | null>(null);
 
-  // Measured so the viewBox can be widened/heightened to match the panel's
-  // actual aspect ratio (see below) instead of relying on preserveAspectRatio
-  // to reconcile a mismatch — "meet" letterboxes (empty bars), "slice" crops.
-  // Neither is needed once the viewBox itself is shaped like the panel.
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(
     null
@@ -238,128 +180,20 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     return () => observer.disconnect();
   }, []);
 
-  // Settled layout — computed once per graph, not per animation frame.
-  const anchored = useMemo<PositionedNode[]>(() => {
-    if (nodes.length === 0) return [];
-
-    const simNodes: PositionedNode[] = nodes.map((node) => ({ ...node }));
-    const simLinks: SimLink[] = edges.map((edge) => ({ source: edge.from, target: edge.to }));
-
-    const simulation = forceSimulation(simNodes)
-      .force(
-        "link",
-        forceLink<PositionedNode, SimLink>(simLinks)
-          .id((node) => node.id)
-          .distance(26)
-          .strength(0.6)
-      )
-      // Tightened further, deliberately below the old hit-zone-safety floor
-      // (22 = 2x the resting hit-zone radius) now that a hovered node's
-      // growth actively pushes overlapping neighbors aside instead of just
-      // relying on static collision distance (see pushById below) — that's
-      // what makes the push effect ever have anything to do, since at the
-      // old floor no hover-scaled pair could ever get close enough to
-      // overlap in the first place. Trade-off accepted deliberately: in the
-      // densest spots, two resting (unhovered) nodes' padded hit zones can
-      // now overlap slightly, which can occasionally flicker between them
-      // on hover.
-      .force("charge", forceManyBody().strength(-50).distanceMax(130))
-      .force("center", forceCenter(0, 0))
-      .force("collide", forceCollide(12))
-      // Disconnected components (no edges between them) have nothing else
-      // pulling them together, so unbounded repulsion alone would let them
-      // drift apart indefinitely — forceCenter only corrects the overall
-      // centroid, not each component individually. A weak pull toward the
-      // origin keeps separate clusters in the same neighborhood instead of
-      // spreading the viewBox out until every cluster looks like a tiny
-      // speck in mostly empty space.
-      .force("x", forceX(0).strength(0.1))
-      .force("y", forceY(0).strength(0.1))
-      .stop();
-
-    for (let i = 0; i < 300; i++) simulation.tick();
-
-    return simNodes;
-  }, [nodes, edges]);
-
-  if (anchored.length <= 1) {
-    return <p className="text-sm text-black/50 dark:text-white/50">No connections yet.</p>;
+  function hrefFor(id: string): string {
+    if (linkMode === "detail" || id === centerId) return `/objects/${id}`;
+    return `/objects/${id}/graph`;
   }
-
-  const neighborIds = new Set<string>();
-  if (hoveredId) {
-    for (const edge of edges) {
-      if (edge.from === hoveredId) neighborIds.add(edge.to);
-      if (edge.to === hoveredId) neighborIds.add(edge.from);
-    }
-  }
-
-  // Live positions = anchor + drift. Edges read from this too, so lines
-  // stay attached to their nodes as they float instead of drifting apart.
-  // Drift keeps running for every node regardless of hover — pausing it
-  // just for the hovered node (to stop its now-hidden label from jittering)
-  // caused a worse problem: the drift clock keeps ticking while paused, so
-  // resuming re-evaluates the sine wave at a now-arbitrary phase instead of
-  // continuing smoothly, producing a visible jump on mouse-out.
-  const rendered = anchored.map((node) => {
-    if (reduceMotion) return node;
-    const drift = driftParamsFor(node.id);
-    return {
-      ...node,
-      x: (node.x ?? 0) + drift.ampX * Math.sin(t * drift.freqX + drift.phaseX),
-      y: (node.y ?? 0) + drift.ampY * Math.sin(t * drift.freqY + drift.phaseY),
-    };
-  });
-
-  // Bounding box from the settled (non-drifting) layout, padded well beyond
-  // the small drift amplitude, so the viewBox itself stays still. Padding
-  // has to comfortably fit a *focused* node's label too: at the largest
-  // scale (~3.5x, a center node) the type-label line sits (radius + 21) *
-  // scale units from the node's own center, i.e. up to ~110 units — a
-  // node near the edge of the graph's natural bounds needs that much
-  // clearance or its label clips against the viewBox.
-  const xs = anchored.map((node) => node.x ?? 0);
-  const ys = anchored.map((node) => node.y ?? 0);
-  const padding = 130;
-  const minX = Math.min(...xs) - padding;
-  const minY = Math.min(...ys) - padding;
-  const width = Math.max(...xs) - minX + padding;
-  const height = Math.max(...ys) - minY + padding;
-
-  // Grow the viewBox on whichever axis is "too narrow" so its aspect ratio
-  // matches the measured panel exactly — once they match, there's nothing
-  // left for preserveAspectRatio to reconcile, so nodes near the graph's
-  // natural edge never get cropped, and the graph still fills the panel
-  // instead of shrinking to fit inside a mismatched shape.
-  let vbMinX = minX;
-  let vbMinY = minY;
-  let vbWidth = width;
-  let vbHeight = height;
-  if (containerSize && containerSize.width > 0 && containerSize.height > 0) {
-    const containerAspect = containerSize.width / containerSize.height;
-    const contentAspect = width / height;
-    if (containerAspect > contentAspect) {
-      const targetWidth = height * containerAspect;
-      vbMinX = minX - (targetWidth - width) / 2;
-      vbWidth = targetWidth;
-    } else {
-      const targetHeight = width / containerAspect;
-      vbMinY = minY - (targetHeight - height) / 2;
-      vbHeight = targetHeight;
-    }
-  }
-
-  const byId = new Map(rendered.map((node) => [node.id, node]));
-  const anchoredById = new Map(anchored.map((node) => [node.id, node]));
-  const depthTiers = computeDepthTiers(
-    hoveredId,
-    nodes.map((node) => node.id),
-    edges
-  );
 
   function radiusFor(id: string): number {
     return id === centerId ? 10 : 6;
   }
+
+  const nodeIds = useMemo(() => nodes.map((n) => n.id), [nodes]);
+  const depthTiers = useMemo(
+    () => computeDepthTiers(hoveredId, nodeIds, edges),
+    [hoveredId, nodeIds, edges]
+  );
 
   function scaleFor(id: string): number {
     const tier = depthTiers.get(id) ?? 1;
@@ -367,275 +201,170 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     return scaleForZ(DEPTH_TIERS[tier].z);
   }
 
-  // Gap kept between two circles' edges once "touching", beyond exactly
-  // meeting — a little breathing room instead of a razor-thin seam.
-  const PUSH_GAP = 6;
-  // Safety cap — current force parameters shouldn't need anywhere near
-  // this much push, but keeps a future tighter resting layout (or a
-  // very high-degree hub) from producing a jarring, oversized shove.
-  const MAX_PUSH = 40;
-
-  // The hovered node grows (scaleFor) but never moves; anything else that
-  // now overlaps its bigger circle gets shoved outward by exactly that
-  // overlap. Checked against every other node, not just graph-linked
-  // neighbors — a node from a totally different (even disconnected)
-  // cluster can end up spatially close by coincidence, especially since
-  // separate components get pulled toward the same neighborhood (see the
-  // "x"/"y" centering force above), and it should get out of the way too.
-  // This is a one-shot geometric correction recomputed from the settled
-  // layout, not a live physics re-simulation — cheap (linear in node
-  // count) and stable.
-  const pushById = new Map<string, { dx: number; dy: number }>();
-  if (hoveredId) {
-    const hub = byId.get(hoveredId);
-    const hubRadius = radiusFor(hoveredId) * scaleFor(hoveredId);
-    if (hub) {
-      for (const node of rendered) {
-        if (node.id === hoveredId) continue;
-        const otherRadius = radiusFor(node.id) * scaleFor(node.id);
-        const dx = (node.x ?? 0) - (hub.x ?? 0);
-        const dy = (node.y ?? 0) - (hub.y ?? 0);
-        const dist = Math.hypot(dx, dy);
-        const desiredMin = hubRadius + otherRadius + PUSH_GAP;
-        if (dist >= desiredMin) continue;
-        // Degenerate case (near-zero distance): push in a stable,
-        // id-seeded direction instead of an undefined one.
-        const [ux, uy] =
-          dist > 0.01
-            ? [dx / dist, dy / dist]
-            : [Math.cos(hashString(node.id)), Math.sin(hashString(node.id))];
-        const pushAmount = Math.min(desiredMin - dist, MAX_PUSH);
-        pushById.set(node.id, { dx: ux * pushAmount, dy: uy * pushAmount });
-      }
-    }
+  function currentRadius(id: string): number {
+    return radiusFor(id) * scaleFor(id);
   }
 
-  function delayFor(id: string): number {
-    return id === lastHoveredId ? 0 : jitterFor(id);
-  }
-
-  const visualById = new Map(
-    rendered.map((node) => {
-      const push = pushById.get(node.id);
-      return [
-        node.id,
-        { x: (node.x ?? 0) + (push?.dx ?? 0), y: (node.y ?? 0) + (push?.dy ?? 0) },
-      ] as const;
-    })
+  // graphData identity must stay stable across renders (the engine keeps
+  // its own copy of these objects and mutates them with x/y/vx/vy as the
+  // simulation runs) — only rebuild it when the actual node/edge set
+  // changes, not on every hover-driven re-render.
+  const graphData = useMemo(
+    () => ({
+      nodes: nodes.map((n) => ({ ...n })) as FGNode[],
+      links: edges.map((e) => ({ ...e })),
+    }),
+    [nodes, edges]
   );
 
+  // Force setup — link distance/charge/collide tuned to the same "tight
+  // clusters, disconnected components kept in the same neighborhood"
+  // character established earlier, just running as a live simulation
+  // instead of a one-shot 300-tick layout. Deliberately static (resting
+  // radius only, no hover dependence, no reheating on hover): an earlier
+  // version made a hovered node's growth dynamically resize the collide
+  // force and reheated on every hover change so neighbors would get
+  // physically shoved aside — but with only a weak x/y centering force,
+  // that reheat let the *whole* graph's position drift a little further
+  // on every hover, compounding over time into visible instability. Hover
+  // now only changes what's drawn (see nodeCanvasObject/currentRadius),
+  // never the physics, which is what actually stopped it from settling.
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3Force("x", forceX(0).strength(0.08));
+    fg.d3Force("y", forceY(0).strength(0.08));
+    fg.d3Force(
+      "collide",
+      forceCollide((node: SimulationNodeDatum & { id?: string | number }) =>
+        radiusFor(node.id as string) + 6
+      ).strength(1)
+    );
+    const charge = fg.d3Force("charge");
+    if (charge && "distanceMax" in charge) {
+      (charge as unknown as { distanceMax: (d: number) => void }).distanceMax(130);
+    }
+    const link = fg.d3Force("link");
+    if (link && "distance" in link) {
+      (link as unknown as { distance: (d: number) => void }).distance(26);
+    }
+    fg.d3ReheatSimulation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphData]);
+
+  // Camera framing — the engine has no built-in "fit to content" on its
+  // own; left alone it renders at a fixed 1 graph-unit = 1 pixel scale
+  // centered on graph coordinate (0,0), which (like the very first SVG
+  // viewBox bug) shows the settled cluster as a tiny speck in a mostly
+  // empty canvas. onEngineStop fires whenever the simulation settles —
+  // including after a hover-triggered reheat — so this only re-fits on
+  // the FIRST settle (the initial layout); a hover shouldn't yank the
+  // camera around.
+  const hasFitRef = useRef(false);
+  useEffect(() => {
+    hasFitRef.current = false;
+  }, [graphData]);
+
+  if (nodes.length <= 1) {
+    return <p className="text-sm text-black/50 dark:text-white/50">No connections yet.</p>;
+  }
+
   return (
-    <div ref={containerRef} className="h-[750px] w-full">
-      <svg viewBox={`${vbMinX} ${vbMinY} ${vbWidth} ${vbHeight}`} className="h-full w-full">
-      {edges.map((edge) => {
-        const from = visualById.get(edge.from);
-        const to = visualById.get(edge.to);
-        if (!from || !to) return null;
-        const isActive = hoveredId !== null && (edge.from === hoveredId || edge.to === hoveredId);
-        // Only a neighbor endpoint ever gets pushed (the hovered node
-        // itself never moves), so borrow whichever side that is for the
-        // line's own move transition, keeping it in step with that node.
-        const edgeDelay = edge.from === hoveredId ? delayFor(edge.to) : delayFor(edge.from);
+    <div ref={containerRef} className="h-[750px] w-full overflow-hidden">
+      {containerSize ? (
+        <ForceGraph2D
+          ref={fgRef}
+          graphData={graphData}
+          width={containerSize.width}
+          height={containerSize.height}
+          backgroundColor="rgba(0,0,0,0)"
+          linkSource="from"
+          linkTarget="to"
+          warmupTicks={300}
+          cooldownTime={reduceMotion ? 0 : 4000}
+          enableNodeDrag={false}
+          onEngineStop={() => {
+            if (hasFitRef.current) return;
+            hasFitRef.current = true;
+            fgRef.current?.zoomToFit(400, 40);
+          }}
+          nodeLabel={() => ""}
+          onNodeHover={(node) => setHoveredId((node as FGNode | null)?.id ?? null)}
+          onNodeClick={(node) => router.push(hrefFor((node as FGNode).id))}
+          nodeCanvasObject={(node, ctx) => {
+            const id = (node as FGNode).id;
+            const x = node.x ?? 0;
+            const y = node.y ?? 0;
+            const tier = depthTiers.get(id) ?? 1;
+            const { opacity } = DEPTH_TIERS[tier];
+            const radius = currentRadius(id);
+            const isCenter = id === centerId;
+            const isHovered = id === hoveredId;
+            const isNeighbor = tier === 1 && hoveredId !== null;
+            const rgb = hexToRgb(colorForType((node as FGNode).type));
 
-        // Same transparency rule as nodes: an edge takes the opacity of
-        // whichever endpoint is FARTHER (higher tier) from the hovered
-        // node, so a line reaching into the background fades with it.
-        // Edges touching the hovered node itself stay fully opaque so the
-        // focus reads clearly regardless of tier math.
-        const tierFrom = depthTiers.get(edge.from) ?? 1;
-        const tierTo = depthTiers.get(edge.to) ?? 1;
-        const edgeTier = Math.max(tierFrom, tierTo) as 0 | 1 | 2 | 3;
-        const opacity = isActive ? 1 : DEPTH_TIERS[edgeTier].opacity;
+            // Solid backing first so a dimmed node's own translucent fill
+            // doesn't let connection lines show through its body.
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = backgroundColor;
+            ctx.fill();
 
-        return (
-          <g key={edge.id} style={{ opacity, transition: "opacity 500ms ease-out" }}>
-            {/* Active edges use a fixed mid-gray instead of currentColor at
-                high opacity — a near-white/black line at high opacity read
-                as too close to the label text itself, hurting legibility.
-                Gray sits deliberately between the dim tertiary lines and
-                full-brightness text. */}
-            <line
-              x1={from.x}
-              y1={from.y}
-              x2={to.x}
-              y2={to.y}
-              stroke={isActive ? "#6b7280" : "currentColor"}
-              strokeOpacity={isActive ? 1 : 0.25}
-              strokeWidth={isActive ? 2 : 1.5}
-              className={isActive ? undefined : "text-black dark:text-white"}
-              style={{
-                transition: `x1 500ms cubic-bezier(0.16, 1, 0.3, 1) ${edgeDelay}s, y1 500ms cubic-bezier(0.16, 1, 0.3, 1) ${edgeDelay}s, x2 500ms cubic-bezier(0.16, 1, 0.3, 1) ${edgeDelay}s, y2 500ms cubic-bezier(0.16, 1, 0.3, 1) ${edgeDelay}s`,
-              }}
-            />
-          </g>
-        );
-      })}
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = `rgba(${rgb}, ${opacity})`;
+            ctx.fill();
+            if (isCenter) {
+              ctx.lineWidth = 1;
+              ctx.strokeStyle = `rgba(128, 128, 128, ${opacity})`;
+              ctx.stroke();
+            }
 
-      {/* Fixed, hover-independent order — reordering elements to "bring to
-          front" caused inconsistent transitions (some nodes' in-flight
-          scale animation would glitch on reorder). Depth is conveyed by
-          scale/opacity alone instead; that's enough since nodes rarely
-          overlap in this layout. */}
-      {rendered.map((node) => {
-        const isCenter = node.id === centerId;
-        const isHovered = node.id === hoveredId;
-        const isNeighbor = neighborIds.has(node.id);
-        const showLabel = SHOW_LABELS && (isHovered || isNeighbor);
-        const radius = radiusFor(node.id);
-
-        const tier = depthTiers.get(node.id) ?? 1;
-        const { opacity } = DEPTH_TIERS[tier];
-        // The (last) focused node always moves immediately; every other
-        // node gets its own randomized start time with no tier grouping,
-        // so the ripple no longer moves outward in visible rings. Keyed on
-        // lastHoveredId (persists after mouse-out) rather than the live
-        // hoveredId so un-focusing still snaps the old focus node back
-        // first, same as focusing does.
-        const delay = delayFor(node.id);
-        // A hovered node grows but never moves; anything overlapping its
-        // bigger circle gets shoved outward — see pushById above.
-        // Everything unaffected (the vast majority of nodes, most renders)
-        // has zero push and this is just the drifting position, unchanged.
-        const visual = visualById.get(node.id) ?? { x: node.x ?? 0, y: node.y ?? 0 };
-        const push = pushById.get(node.id);
-        const pushMagnitude = push ? Math.hypot(push.dx, push.dy) : 0;
-
-        // The padded hit target is only useful for a small, resting-size
-        // dot — once a node is the focus (z=-100) it's already scaled up
-        // large enough to target precisely, so the hit zone shrinks back
-        // to the node's own radius instead of stacking padding on top of
-        // an already-enlarged circle. When pushed, the hit zone's *center*
-        // deliberately stays anchored (see hitX/hitY below) rather than
-        // following the push, to avoid a feedback loop — hovering a pushed
-        // neighbor would make IT the new hub, snapping its own push back
-        // to zero and yanking its hit zone out from under the cursor mid
-        // hover. Instead its radius grows by the push amount, which is
-        // enough for a fixed circle to still fully cover a dot that has
-        // moved directly away from it by that same amount.
-        const hitRadius = tier === 0 ? radius : radius + 14 + pushMagnitude;
-        // Tier 1 doubles as both "idle, nothing hovered" (stay at rest,
-        // scale 1) and "secondary — a direct connection of the hovered
-        // node" (pop up 50% so the immediate connections read as active
-        // participants in the focus, not just unchanged background).
-        const scale = scaleFor(node.id);
-
-        // Pivot on the node's own live (drifting + pushed) position — the
-        // same one its circle and connected lines are drawn at — so it
-        // always grows from dead-center and never visibly detaches from
-        // its edges. This only stays smooth because drift no longer
-        // pauses/resumes per hover state (that used to jump between very
-        // different phases instantly); a continuous drift's per-tick
-        // origin change is small enough to be imperceptible even though
-        // transform-origin itself isn't a transitioned property.
-        const originX = visual.x;
-        const originY = visual.y;
-
-        // The invisible hit-zone stays pinned to the stable anchor
-        // (unlike the visible circle/pivot above) so it doesn't wobble out
-        // from under the cursor as the node drifts — otherwise, once
-        // focused and shrunk to the node's actual small radius, drift
-        // alone could push the node outside its own hit area, causing a
-        // rapid focus/unfocus flicker.
-        const hitAnchor = anchoredById.get(node.id);
-        const hitX = hitAnchor?.x ?? node.x;
-        const hitY = hitAnchor?.y ?? node.y;
-
-        return (
-          <Link
-            key={node.id}
-            href={hrefFor(node.id)}
-            onMouseEnter={() => {
-              setHoveredId(node.id);
-              setLastHoveredId(node.id);
-            }}
-            onMouseLeave={() => setHoveredId(null)}
-            style={{
-              transform: `scale(${scale})`,
-              transformOrigin: `${originX}px ${originY}px`,
-              // A much steeper deceleration than standard ease-out — most
-              // of the scale change happens fast, up front, then eases
-              // hard into the final size for a punchier "pull forward".
-              transition: `transform 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
-            }}
-          >
-              {/* Invisible, larger than the visible dot at rest so a small
-                  node is still easy to hover/click; shrinks back to the
-                  node's own size once focused (see hitRadius above).
-                  fill="transparent" (not "none") so it still registers
-                  pointer events. r is animatable via CSS transition same
-                  as any other SVG geometry property. */}
-              <circle
-                cx={hitX}
-                cy={hitY}
-                r={hitRadius}
-                fill="transparent"
-                style={{ transition: "r 500ms ease-out" }}
-              />
-              {/* Solid backing, always fully opaque, matching the page
-                  background — masks the edge lines drawn earlier (so
-                  "behind") in the SVG. Without this, a dimmed node's own
-                  translucent fill let connection lines show straight
-                  through its own body. */}
-              <circle
-                cx={visual.x}
-                cy={visual.y}
-                r={radius}
-                fill="var(--background)"
-                style={{
-                  transition: `cx 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s, cy 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
-                }}
-              />
-              <circle
-                cx={visual.x}
-                cy={visual.y}
-                r={radius}
-                fill={colorForType(node.type)}
-                fillOpacity={opacity}
-                stroke={isCenter ? "currentColor" : "none"}
-                strokeWidth={isCenter ? 2 : 0}
-                className={isCenter ? "text-black dark:text-white" : undefined}
-                style={{
-                  transition: `fill-opacity 500ms ease-out ${delay}s, cx 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s, cy 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
-                }}
-              />
-              {showLabel ? (
-                <>
-                  {/* Every labeled node is CSS-scaled (transform: scale
-                      above) — focus at 3.5x, secondary at 1.8x — so these
-                      are base font sizes, not the actual rendered size.
-                      Chosen so the scaled result reads focus (5*3.5=17.5)
-                      clearly bigger than secondary (7*1.8=12.6). */}
-                  <text
-                    x={visual.x}
-                    y={visual.y + radius + 12}
-                    textAnchor="middle"
-                    fontSize={isHovered ? 5 : 7}
-                    opacity={opacity}
-                    className="fill-black dark:fill-white"
-                    style={{
-                      transition: `x 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s, y 500ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
-                    }}
-                  >
-                    {node.graphLabel ?? node.name}
-                  </text>
-                  {isHovered ? (
-                    <text
-                      x={visual.x}
-                      y={visual.y + radius + 16}
-                      textAnchor="middle"
-                      fontSize={2.5}
-                      opacity={opacity}
-                      className="fill-black/50 dark:fill-white/50"
-                    >
-                      {node.type}
-                    </text>
-                  ) : null}
-                </>
-              ) : null}
-            </Link>
-          );
-        })}
-      </svg>
+            if (isHovered || isNeighbor) {
+              const label = (node as FGNode).graphLabel ?? (node as FGNode).name;
+              ctx.font = `${isHovered ? 6 : 4.5}px sans-serif`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "top";
+              ctx.fillStyle = `rgba(128, 128, 128, ${opacity})`;
+              ctx.fillText(label, x, y + radius + 3);
+              if (isHovered) {
+                ctx.font = "3px sans-serif";
+                ctx.fillText((node as FGNode).type, x, y + radius + 3 + 7);
+              }
+            }
+          }}
+          nodePointerAreaPaint={(node, color, ctx) => {
+            const id = (node as FGNode).id;
+            const x = node.x ?? 0;
+            const y = node.y ?? 0;
+            // A flat, generous padding regardless of tier — canvas
+            // hit-testing is a dedicated per-pixel lookup (not overlapping
+            // DOM elements), so there's no risk of two nearby hit zones
+            // "flickering" against each other the way there was with the
+            // old SVG version; it can just always be comfortably clickable.
+            const radius = currentRadius(id) + 8;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = color;
+            ctx.fill();
+          }}
+          linkColor={(link) => {
+            const from = typeof link.source === "object" ? (link.source as FGNode).id : link.source;
+            const to = typeof link.target === "object" ? (link.target as FGNode).id : link.target;
+            const isActive = hoveredId !== null && (from === hoveredId || to === hoveredId);
+            const tierFrom = depthTiers.get(from as string) ?? 1;
+            const tierTo = depthTiers.get(to as string) ?? 1;
+            const edgeTier = Math.max(tierFrom, tierTo) as 0 | 1 | 2 | 3;
+            if (isActive) return "rgba(107, 114, 128, 1)";
+            return `rgba(128, 128, 128, ${DEPTH_TIERS[edgeTier].opacity * 0.4})`;
+          }}
+          linkWidth={(link) => {
+            const from = typeof link.source === "object" ? (link.source as FGNode).id : link.source;
+            const to = typeof link.target === "object" ? (link.target as FGNode).id : link.target;
+            return hoveredId !== null && (from === hoveredId || to === hoveredId) ? 2 : 1;
+          }}
+        />
+      ) : null}
     </div>
   );
 }
