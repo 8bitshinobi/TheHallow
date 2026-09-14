@@ -6,7 +6,7 @@ export async function listObjects(typeFilter?: string): Promise<HallowObject[]> 
   let query = supabase.from("objects").select("*").order("name");
 
   if (typeFilter) {
-    query = query.eq("type", typeFilter);
+    query = query.ilike("type", typeFilter);
   }
 
   const { data, error } = await query;
@@ -18,7 +18,7 @@ export async function listObjectTypes(): Promise<string[]> {
   const supabase = await createClient();
   const { data, error } = await supabase.from("objects").select("type");
   if (error) throw new Error(error.message);
-  return Array.from(new Set((data ?? []).map((row) => row.type))).sort();
+  return Array.from(new Set((data ?? []).map((row) => row.type.trim()))).sort();
 }
 
 export async function getObject(id: string): Promise<HallowObject | null> {

@@ -6,9 +6,12 @@ import { createObject } from "@/app/objects/actions";
 import { PropertiesEditor } from "@/components/PropertiesEditor";
 import { rethrowIfRedirectError } from "@/lib/utils";
 
+const NEW_TYPE_VALUE = "__new__";
+
 export function ObjectCreateForm({ existingTypes }: { existingTypes: string[] }) {
   const router = useRouter();
   const [type, setType] = useState(existingTypes[0] ?? "");
+  const [isNewType, setIsNewType] = useState(existingTypes.length === 0);
   const [name, setName] = useState("");
   const [properties, setProperties] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
@@ -50,19 +53,55 @@ export function ObjectCreateForm({ existingTypes }: { existingTypes: string[] })
         <label htmlFor="type" className="text-sm font-medium">
           Type
         </label>
-        <input
-          id="type"
-          list="existing-types"
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-          placeholder="e.g. creature, place, npc"
-          className="w-full rounded border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
-        />
-        <datalist id="existing-types">
-          {existingTypes.map((t) => (
-            <option key={t} value={t} />
-          ))}
-        </datalist>
+        {isNewType ? (
+          <div className="flex gap-2">
+            <input
+              id="type"
+              autoFocus
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              placeholder="e.g. creature, place, npc"
+              className="w-full rounded border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
+            />
+            {existingTypes.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNewType(false);
+                  setType(existingTypes[0] ?? "");
+                }}
+                className="shrink-0 rounded border border-black/15 px-3 py-2 text-sm dark:border-white/15"
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <select
+            id="type"
+            value={type}
+            onChange={(e) => {
+              if (e.target.value === NEW_TYPE_VALUE) {
+                setIsNewType(true);
+                setType("");
+              } else {
+                setType(e.target.value);
+              }
+            }}
+            className="w-full rounded border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
+          >
+            {existingTypes.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+            <option value={NEW_TYPE_VALUE}>+ Add new type…</option>
+          </select>
+        )}
+        <p className="text-xs text-black/50 dark:text-white/50">
+          Pick an existing type from the list, or add a new one — this keeps casing consistent (no more
+          &quot;NPC&quot; vs &quot;npc&quot;).
+        </p>
       </div>
 
       <div className="space-y-1">

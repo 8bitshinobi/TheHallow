@@ -18,7 +18,9 @@ export default async function ObjectsPage({
   // The graph mirrors whatever type filter is active on the list: only
   // nodes of that type, and only edges where both ends survive the filter
   // (an edge to a filtered-out node would otherwise dangle).
-  const graphNodes = type ? allNodes.filter((node) => node.type === type) : allNodes;
+  const graphNodes = type
+    ? allNodes.filter((node) => node.type.toLowerCase() === type.toLowerCase())
+    : allNodes;
   const graphNodeIds = new Set(graphNodes.map((node) => node.id));
   const graphEdges = allEdges.filter(
     (edge) => graphNodeIds.has(edge.from) && graphNodeIds.has(edge.to)
