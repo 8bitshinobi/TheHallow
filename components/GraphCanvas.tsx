@@ -305,7 +305,18 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   );
 
   return (
-    <svg viewBox={`${minX} ${minY} ${width} ${height}`} className="h-[500px] w-full">
+    <svg
+      viewBox={`${minX} ${minY} ${width} ${height}`}
+      // Default "meet" scales the graph down to fit entirely inside the
+      // panel, which letterboxes hard when the panel is a wide rectangle
+      // and the graph's own bounding box is closer to square — most of the
+      // panel ends up empty on the sides. "slice" scales up to cover the
+      // whole panel instead (cropping a little at the far edges, where
+      // padding already keeps content clear of it), so the graph actually
+      // fills the space instead of floating small in the middle of it.
+      preserveAspectRatio="xMidYMid slice"
+      className="h-[500px] w-full"
+    >
       {edges.map((edge) => {
         const from = byId.get(edge.from);
         const to = byId.get(edge.to);
