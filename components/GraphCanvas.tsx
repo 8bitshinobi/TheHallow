@@ -250,17 +250,22 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         "link",
         forceLink<PositionedNode, SimLink>(simLinks)
           .id((node) => node.id)
-          .distance(55)
+          .distance(35)
           .strength(0.6)
       )
-      // Tightened from -260/400/46 — pulls each cluster's own nodes closer
-      // together (less repulsion, shorter links, a smaller collision floor)
-      // so a cluster's footprint shrinks and the panel-filling scale factor
-      // (see the viewBox-matching logic below) goes up accordingly, making
-      // the whole graph read bigger without changing the panel itself.
-      .force("charge", forceManyBody().strength(-110).distanceMax(250))
+      // Tightened further — pulls each cluster's own nodes closer together
+      // (less repulsion, shorter links, a smaller collision floor) so a
+      // cluster's footprint shrinks and the panel-filling scale factor (see
+      // the viewBox-matching logic below) goes up accordingly, making the
+      // whole graph read bigger without changing the panel itself. The
+      // floor here (22) isn't arbitrary: a resting node's padded hover hit
+      // zone is radius 6 + 14 = 20px (see hitRadius below), so two adjacent
+      // hit zones only avoid overlapping — and hover not going flickery —
+      // once node centers land at least 40px apart, i.e. collide >= 20.
+      // 22 keeps a couple of px of margin on top of that floor.
+      .force("charge", forceManyBody().strength(-70).distanceMax(180))
       .force("center", forceCenter(0, 0))
-      .force("collide", forceCollide(30))
+      .force("collide", forceCollide(22))
       // Disconnected components (no edges between them) have nothing else
       // pulling them together, so unbounded repulsion alone would let them
       // drift apart indefinitely — forceCenter only corrects the overall
@@ -268,8 +273,8 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
       // origin keeps separate clusters in the same neighborhood instead of
       // spreading the viewBox out until every cluster looks like a tiny
       // speck in mostly empty space.
-      .force("x", forceX(0).strength(0.06))
-      .force("y", forceY(0).strength(0.06))
+      .force("x", forceX(0).strength(0.08))
+      .force("y", forceY(0).strength(0.08))
       .stop();
 
     for (let i = 0; i < 300; i++) simulation.tick();
