@@ -116,29 +116,31 @@ function colorForType(type: string): string {
 
 type Bounds = { xMin: number; xMax: number; yMin: number; yMax: number };
 
-// A custom d3-force "wall": each tick, clamp every node back inside the box
-// and zero out whatever velocity component was driving it further past the
-// edge — a node stops dead at the wall instead of jittering against it or
-// (with nothing clamped) drifting out into empty canvas indefinitely.
+// A custom d3-force "wall". d3-force's tick loop calls every registered
+// force to accumulate vx/vy, THEN — once, after all forces have run —
+// applies its own `x += vx` integration step. A force that sets `x`/`y`
+// directly (as an earlier version of this did) gets silently overwritten
+// by that automatic step, since it runs after every force, letting a
+// node escape whenever an ordinary tick's velocity was large enough
+// (exactly what happens right when a hovered node's collision radius
+// jumps and shoves a neighbor hard). The fix is to predict where the
+// existing velocity would land the node this tick and, if that's past an
+// edge, replace vx/vy with exactly the delta needed to land ON the edge
+// instead — so the boundary is respected by the same integration step
+// every other force relies on, not fought against after the fact.
 function forceBounds(bounds: Bounds) {
   let nodes: (SimulationNodeDatum & { vx?: number; vy?: number })[] = [];
   function force() {
     for (const n of nodes) {
       if (n.x === undefined || n.y === undefined) continue;
-      if (n.x < bounds.xMin) {
-        n.x = bounds.xMin;
-        if (n.vx !== undefined && n.vx < 0) n.vx = 0;
-      } else if (n.x > bounds.xMax) {
-        n.x = bounds.xMax;
-        if (n.vx !== undefined && n.vx > 0) n.vx = 0;
-      }
-      if (n.y < bounds.yMin) {
-        n.y = bounds.yMin;
-        if (n.vy !== undefined && n.vy < 0) n.vy = 0;
-      } else if (n.y > bounds.yMax) {
-        n.y = bounds.yMax;
-        if (n.vy !== undefined && n.vy > 0) n.vy = 0;
-      }
+      const vx = n.vx ?? 0;
+      const vy = n.vy ?? 0;
+      const nextX = n.x + vx;
+      const nextY = n.y + vy;
+      if (nextX < bounds.xMin) n.vx = bounds.xMin - n.x;
+      else if (nextX > bounds.xMax) n.vx = bounds.xMax - n.x;
+      if (nextY < bounds.yMin) n.vy = bounds.yMin - n.y;
+      else if (nextY > bounds.yMax) n.vy = bounds.yMax - n.y;
     }
   }
   force.initialize = (n: typeof nodes) => {
@@ -264,14 +266,21 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   // clusters, disconnected components kept in the same neighborhood"
   // character established earlier, just running as a live simulation
   // instead of a one-shot 300-tick layout. Deliberately static (resting
-  // radius only, no hover dependence, no reheating on hover): an earlier
-  // version made a hovered node's growth dynamically resize the collide
-  // force and reheated on every hover change so neighbors would get
-  // physically shoved aside — but with only a weak x/y centering force,
-  // that reheat let the *whole* graph's position drift a little further
-  // on every hover, compounding over time into visible instability. Hover
-  // now only changes what's drawn (see nodeCanvasObject/currentRadius),
-  // never the physics, which is what actually stopped it from settling.
+  // radius only, no hover dependence, no reheating on hover). Tried twice
+  // and reverted both times: making a hovered node's growth dynamically
+  // resize the collide force and reheating on every hover change was meant
+  // to let neighbors get physically shoved aside, but d3ReheatSimulation()
+  // resets alpha to 1 — every force fires at full strength again, not just
+  // collide, so it's closer to re-running the whole layout than nudging
+  // one local collision. First attempt (no wall) let the whole graph drift
+  // further on every hover; second attempt (with the wall in place, and a
+  // real forceBounds bug fixed along the way) no longer let anything
+  // escape, but the whole cluster still visibly reorganized on hover — the
+  // wall fixed the escape, not the underlying over-reaction. A version of
+  // this worth revisiting would need to sidestep the simulation entirely
+  // (a purely visual, render-time offset for drawing only, with its own
+  // custom link-drawing so edges follow it) rather than driving it through
+  // reheat.
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
@@ -291,7 +300,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     if (link && "distance" in link) {
       (link as unknown as { distance: (d: number) => void }).distance(26);
     }
-    // The "wall": registered alongside the other forces (not deferred until
+    // The wall: registered alongside the other forces (not deferred until
     // after settling) so it's a real constraint on how the layout can
     // develop, not just a box drawn around wherever things ended up.
     fg.d3Force("bounds", forceBounds(bounds));
