@@ -250,12 +250,17 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
         "link",
         forceLink<PositionedNode, SimLink>(simLinks)
           .id((node) => node.id)
-          .distance(110)
+          .distance(55)
           .strength(0.6)
       )
-      .force("charge", forceManyBody().strength(-260).distanceMax(400))
+      // Tightened from -260/400/46 — pulls each cluster's own nodes closer
+      // together (less repulsion, shorter links, a smaller collision floor)
+      // so a cluster's footprint shrinks and the panel-filling scale factor
+      // (see the viewBox-matching logic below) goes up accordingly, making
+      // the whole graph read bigger without changing the panel itself.
+      .force("charge", forceManyBody().strength(-110).distanceMax(250))
       .force("center", forceCenter(0, 0))
-      .force("collide", forceCollide(46))
+      .force("collide", forceCollide(30))
       // Disconnected components (no edges between them) have nothing else
       // pulling them together, so unbounded repulsion alone would let them
       // drift apart indefinitely — forceCenter only corrects the overall
@@ -263,8 +268,8 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
       // origin keeps separate clusters in the same neighborhood instead of
       // spreading the viewBox out until every cluster looks like a tiny
       // speck in mostly empty space.
-      .force("x", forceX(0).strength(0.03))
-      .force("y", forceY(0).strength(0.03))
+      .force("x", forceX(0).strength(0.06))
+      .force("y", forceY(0).strength(0.06))
       .stop();
 
     for (let i = 0; i < 300; i++) simulation.tick();
