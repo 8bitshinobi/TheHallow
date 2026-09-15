@@ -114,6 +114,47 @@ function colorForType(type: string): string {
   return PALETTE[hashString(type) % PALETTE.length];
 }
 
+// Duration/curve for animating a node's scale and opacity toward whatever
+// its target became after a hover change. A steep deceleration (most of the
+// change happens fast, up front) reads punchier than a plain ease-out.
+const TRANSITION_MS = 320;
+function easeOutQuint(t: number): number {
+  return 1 - Math.pow(1 - t, 5);
+}
+
+type ValueTransition = { from: number; to: number; start: number };
+
+// Generic "ease this id's value toward whatever target it's given right
+// now" tracker. Reused for both scale and opacity so a hover change eases
+// both in lockstep. Reading `performance.now()` fresh on every call (rather
+// than once per React render) is what lets this animate smoothly across
+// several *repainted* frames from a single hover-triggered render — see
+// the force-repaint effect below, which is what actually causes those
+// extra frames to happen at all.
+function animatedValue(
+  transitions: Map<string, ValueTransition>,
+  id: string,
+  target: number
+): number {
+  const now = performance.now();
+  let t = transitions.get(id);
+  if (!t) {
+    t = { from: target, to: target, start: now };
+    transitions.set(id, t);
+    return target;
+  }
+  if (t.to !== target) {
+    // Re-anchor from wherever the animation currently sits (not from the
+    // old target) so retargeting mid-transition doesn't jump.
+    const elapsed = Math.min(1, (now - t.start) / TRANSITION_MS);
+    t.from = t.from + (t.to - t.from) * easeOutQuint(elapsed);
+    t.to = target;
+    t.start = now;
+  }
+  const elapsed = Math.min(1, (now - t.start) / TRANSITION_MS);
+  return t.from + (t.to - t.from) * easeOutQuint(elapsed);
+}
+
 // Render-time-only "push" offset, so hovering a node visually shoves nearby
 // nodes aside without touching the underlying d3-force simulation (the
 // earlier attempt at this drove it through the simulation itself - growing
@@ -288,8 +329,29 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     return scaleForZ(DEPTH_TIERS[tier].z);
   }
 
-  function currentRadius(id: string): number {
-    return radiusFor(id) * scaleFor(id);
+  // Animated (eased-toward-target) counterparts of scaleFor and each
+  // tier's opacity — these are what actually get drawn with and fed into
+  // computeVisualPositions below, so growing/shrinking, fading, and the
+  // push-apart effect all ease in lockstep instead of snapping. The Maps
+  // persist across renders (a ref, not state) since this is per-node
+  // animation progress, not something a re-render should reset.
+  const scaleTransitionsRef = useRef<Map<string, ValueTransition>>(new Map());
+  const opacityTransitionsRef = useRef<Map<string, ValueTransition>>(new Map());
+
+  function animatedScaleFor(id: string): number {
+    if (reduceMotion) return scaleFor(id);
+    return animatedValue(scaleTransitionsRef.current, id, scaleFor(id));
+  }
+
+  function animatedRadiusFor(id: string): number {
+    return radiusFor(id) * animatedScaleFor(id);
+  }
+
+  function animatedOpacityFor(id: string): number {
+    const tier = depthTiers.get(id) ?? 1;
+    const target = DEPTH_TIERS[tier].opacity;
+    if (reduceMotion) return target;
+    return animatedValue(opacityTransitionsRef.current, id, target);
   }
 
   // graphData identity must stay stable across renders (the engine keeps
@@ -343,10 +405,10 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           const { dx, dy } = pushOffset(
             pos.x,
             pos.y,
-            currentRadius(id),
+            animatedRadiusFor(id),
             mover.x,
             mover.y,
-            currentRadius(hoveredId)
+            animatedRadiusFor(hoveredId)
           );
           pos.x += dx;
           pos.y += dy;
@@ -365,7 +427,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const dist = Math.hypot(dx, dy) || 0.001;
-          const minDist = currentRadius(idA) + currentRadius(idB) + OVERLAP_GAP;
+          const minDist = animatedRadiusFor(idA) + animatedRadiusFor(idB) + OVERLAP_GAP;
           if (dist >= minDist) continue;
           const overlap = minDist - dist;
           const ux = dx / dist;
@@ -392,7 +454,35 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     return positions;
   }
 
-  const visualPositions = computeVisualPositions();
+  // Recomputed inside onRenderFramePre (once per actual repainted frame)
+  // rather than called directly here (once per React render) — the ref
+  // lets it pick up each new animation-frame's progress even during the
+  // several *extra* repaints the force-repaint effect below triggers
+  // between React renders, which is what makes the push/overlap
+  // repositioning above animate smoothly instead of snapping straight to
+  // its end state the instant a hover starts.
+  const visualPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+
+  // Nothing else causes a repaint while a hover-triggered transition is
+  // in flight — react-force-graph-2d only actually redraws in response to
+  // an engine tick, a zoom/pan, or a handful of its own internal setters,
+  // not merely because a prop function's identity changed. `zoom(zoom())`
+  // re-applies the *current* zoom level as a deliberate no-op change, but
+  // it still flags the library's internal "needs redraw" state, which is
+  // the cheapest public way to say "please repaint" without reheating the
+  // simulation (which would re-arm real physics, not just repaint).
+  useEffect(() => {
+    if (reduceMotion) return;
+    let rafId: number;
+    const deadline = performance.now() + TRANSITION_MS + 50;
+    function tick() {
+      const fg = fgRef.current;
+      if (fg) fg.zoom(fg.zoom());
+      if (performance.now() < deadline) rafId = requestAnimationFrame(tick);
+    }
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [hoveredId, reduceMotion]);
 
   // Force setup — link distance/charge/collide tuned to the same "tight
   // clusters, disconnected components kept in the same neighborhood"
@@ -477,6 +567,11 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             fgRef.current?.zoomToFit(400, 40);
           }}
           onRenderFramePre={(ctx) => {
+            // Recomputed fresh every actual repainted frame (not once per
+            // React render) so the eased scale feeding into it is always
+            // read at that frame's own timestamp.
+            visualPositionsRef.current = computeVisualPositions();
+
             // ctx is already in graph-coordinate space here (same space
             // node.x/node.y are drawn in), so the wall's own bounds can be
             // stroked directly with no conversion.
@@ -497,12 +592,12 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           onNodeClick={(node) => router.push(hrefFor((node as FGNode).id))}
           nodeCanvasObject={(node, ctx) => {
             const id = (node as FGNode).id;
-            const pos = visualPositions.get(id);
+            const pos = visualPositionsRef.current.get(id);
             const x = pos?.x ?? node.x ?? 0;
             const y = pos?.y ?? node.y ?? 0;
             const tier = depthTiers.get(id) ?? 1;
-            const { opacity } = DEPTH_TIERS[tier];
-            const radius = currentRadius(id);
+            const opacity = animatedOpacityFor(id);
+            const radius = animatedRadiusFor(id);
             const isCenter = id === centerId;
             const isHovered = id === hoveredId;
             const isNeighbor = tier === 1 && hoveredId !== null;
@@ -540,7 +635,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           }}
           nodePointerAreaPaint={(node, color, ctx) => {
             const id = (node as FGNode).id;
-            const pos = visualPositions.get(id);
+            const pos = visualPositionsRef.current.get(id);
             const x = pos?.x ?? node.x ?? 0;
             const y = pos?.y ?? node.y ?? 0;
             // A flat, generous padding regardless of tier — canvas
@@ -548,7 +643,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             // DOM elements), so there's no risk of two nearby hit zones
             // "flickering" against each other the way there was with the
             // old SVG version; it can just always be comfortably clickable.
-            const radius = currentRadius(id) + 8;
+            const radius = animatedRadiusFor(id) + 8;
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, 2 * Math.PI);
             ctx.fillStyle = color;
@@ -567,12 +662,16 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             if (fromNode?.x === undefined || fromNode.y === undefined) return;
             if (toNode?.x === undefined || toNode.y === undefined) return;
 
-            const fromPos = visualPositions.get(fromNode.id) ?? { x: fromNode.x, y: fromNode.y };
-            const toPos = visualPositions.get(toNode.id) ?? { x: toNode.x, y: toNode.y };
+            const fromPos = visualPositionsRef.current.get(fromNode.id) ?? {
+              x: fromNode.x,
+              y: fromNode.y,
+            };
+            const toPos = visualPositionsRef.current.get(toNode.id) ?? {
+              x: toNode.x,
+              y: toNode.y,
+            };
 
-            const tierFrom = depthTiers.get(fromNode.id) ?? 1;
-            const tierTo = depthTiers.get(toNode.id) ?? 1;
-            const edgeTier = Math.max(tierFrom, tierTo) as 0 | 1 | 2 | 3;
+            const edgeOpacity = Math.max(animatedOpacityFor(fromNode.id), animatedOpacityFor(toNode.id));
             const isActive =
               hoveredId !== null && (fromNode.id === hoveredId || toNode.id === hoveredId);
 
@@ -581,7 +680,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             ctx.lineTo(toPos.x, toPos.y);
             ctx.strokeStyle = isActive
               ? "rgba(107, 114, 128, 1)"
-              : `rgba(128, 128, 128, ${DEPTH_TIERS[edgeTier].opacity * 0.4})`;
+              : `rgba(128, 128, 128, ${edgeOpacity * 0.4})`;
             ctx.lineWidth = isActive ? 2 : 1;
             ctx.stroke();
           }}
