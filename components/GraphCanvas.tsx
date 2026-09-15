@@ -114,20 +114,26 @@ function colorForType(type: string): string {
   return PALETTE[hashString(type) % PALETTE.length];
 }
 
-// SPIKE: render-time-only "push" offset, so hovering a node visually shoves
-// nearby nodes aside without touching the underlying d3-force simulation
-// (the earlier attempt at this drove it through the simulation itself -
-// growing the collide radius and calling d3ReheatSimulation() - which
-// reset the simulation's alpha to 1 and re-armed every force, not just
-// collide, so the whole graph visibly reorganized instead of a local
-// nudge; reverted twice, see the comment above the force-setup effect
-// below). This is the same "pull when far, push when close" idea from
+// Render-time-only "push" offset, so hovering a node visually shoves nearby
+// nodes aside without touching the underlying d3-force simulation (the
+// earlier attempt at this drove it through the simulation itself - growing
+// the collide radius and calling d3ReheatSimulation() - which reset the
+// simulation's alpha to 1 and re-armed every force, not just collide, so
+// the whole graph visibly reorganized instead of a local nudge; reverted
+// twice, see the comment above the force-setup effect below). This is the
+// same "pull when far, push when close" idea from
 // https://www.deconbatch.com/2023/11/pushpull01.html.html, pared down to
 // push-only (no pull - an unhovered node drifting toward the cursor would
 // read as wrong) and phrased with a direction vector instead of
 // heading/cos/sin. Magnitude is naturally bounded: at zero separation
 // `d` bottoms out at -1, so the offset never exceeds PUSH_STRENGTH no
-// matter how close two nodes get.
+// matter how close two nodes get. Verified against the real migrated data
+// (both a low-degree and a high-degree ~7-neighbor hub): pushed neighbors
+// fan out cleanly, edges and hit-testing track the offset correctly (see
+// pushOffsetForNode's use in nodeCanvasObject/nodePointerAreaPaint/
+// linkCanvasObject below), and un-hovering resets instantly with no
+// residual drift, since nothing here is stateful — it's recomputed fresh
+// every frame from the current hover id alone.
 const PUSH_GAP = 4;
 const PUSH_STRENGTH = 26;
 
