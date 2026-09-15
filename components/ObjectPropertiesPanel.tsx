@@ -54,7 +54,7 @@ export function ObjectPropertiesPanel({ object }: { object: HallowObject }) {
 
       <div className="space-y-1">
         <span className="text-sm font-medium">Properties</span>
-        <PropertiesEditor properties={properties} onChange={setProperties} />
+        <PropertiesEditor properties={properties} onChange={setProperties} objectId={object.id} />
       </div>
 
       <div className="flex items-center gap-3">

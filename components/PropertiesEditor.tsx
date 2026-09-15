@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { MentionTextarea } from "@/components/MentionTextarea";
 
 type Row = { id: string; key: string; value: string };
 
 type Props = {
   properties: Record<string, string>;
   onChange: (properties: Record<string, string>) => void;
+  /** The object being edited, so property values can @-mention other objects without mentioning themselves. Omit when creating a brand-new object. */
+  objectId?: string;
 };
 
 function toRows(properties: Record<string, string>): Row[] {
@@ -28,38 +31,7 @@ function parseKey(key: string): { group: string | null; label: string } {
   return { group: key.slice(0, dotIndex), label: key.slice(dotIndex + 1) };
 }
 
-/** A textarea that grows to fit its content, including soft-wrapped lines. */
-function AutoGrowTextarea({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
-
-  return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      rows={1}
-      className="min-h-9 flex-1 resize-none overflow-hidden rounded border border-black/15 px-2 py-1.5 text-sm leading-normal whitespace-pre-wrap dark:border-white/15 dark:bg-transparent"
-    />
-  );
-}
-
-export function PropertiesEditor({ properties, onChange }: Props) {
+export function PropertiesEditor({ properties, onChange, objectId }: Props) {
   // Rows carry a stable id independent of their key text, so editing a key
   // (including typing a "." that moves it into a group) doesn't remount the
   // input and lose focus mid-keystroke.
@@ -113,10 +85,11 @@ export function PropertiesEditor({ properties, onChange }: Props) {
           placeholder="Field"
           className="h-9 w-1/3 shrink-0 self-start rounded border border-black/15 px-2 py-1 text-sm dark:border-white/15 dark:bg-transparent"
         />
-        <AutoGrowTextarea
+        <MentionTextarea
           value={row.value}
           onChange={(value) => updateValue(row.id, value)}
-          placeholder="Value"
+          placeholder="Value (type @ to link another object)"
+          excludeId={objectId}
         />
         <button
           type="button"
