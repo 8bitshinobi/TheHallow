@@ -636,7 +636,16 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           onEngineStop={() => {
             if (hasFitRef.current) return;
             hasFitRef.current = true;
-            fgRef.current?.zoomToFit(400, 40);
+            // This is a one-time fit — the camera deliberately never moves
+            // again on hover (see the comment above), so it has to be
+            // framed generously enough up front to cover the *largest*
+            // a node can ever get, not just the resting layout. The
+            // per-object view's center node has a bigger base radius (10
+            // vs 6) and is exactly the node most likely to be hovered, so
+            // at full focus scale it grows noticeably larger than any node
+            // in the whole-archive view ever does — padding tuned for that
+            // case clips its own label and its neighbors' off the edges.
+            fgRef.current?.zoomToFit(400, centerId ? 150 : 40);
           }}
           onRenderFramePre={(ctx) => {
             // Recomputed fresh every actual repainted frame (not once per
