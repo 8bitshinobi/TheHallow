@@ -94,6 +94,14 @@ export async function deleteObject(id: string) {
   revalidatePath("/objects");
 }
 
+export async function listTypes(): Promise<string[]> {
+  const supabase = await requireUser();
+
+  const { data, error } = await supabase.from("objects").select("type");
+  if (error) throw new Error(error.message);
+  return Array.from(new Set((data ?? []).map((row) => row.type.trim()))).sort();
+}
+
 export async function searchObjects(
   query: string,
   excludeId?: string
