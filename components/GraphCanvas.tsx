@@ -280,6 +280,36 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   const reduceMotion = useReducedMotion();
   const backgroundColor = useBackgroundColor();
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
+  // ForceGraph2D is a dynamic (ssr:false) import, so on first mount its
+  // underlying instance can genuinely not exist yet by the time other
+  // effects run — an object ref alone gives no signal for "it just became
+  // available." Without this, an effect that bails out on `!fgRef.current`
+  // during that window (as the force-setup effect below does) never gets a
+  // second chance to run: nothing else changes its dependencies, so the
+  // custom forces (collide, tuned link/charge, the bounding-box wall) can
+  // silently never attach at all, for the lifetime of the component — a
+  // real, previously-undiscovered bug (the library's own ref type only
+  // accepts a plain MutableRefObject, not a callback ref, so a poll is
+  // used instead of a ref-callback to detect the transition). Flips
+  // exactly once, giving the dependent effects below a reason to re-run.
+  const [fgReady, setFgReady] = useState(false);
+  useEffect(() => {
+    if (fgRef.current) {
+      setFgReady(true);
+      return;
+    }
+    let rafId: number;
+    function check() {
+      if (fgRef.current) {
+        setFgReady(true);
+        return;
+      }
+      rafId = requestAnimationFrame(check);
+    }
+    rafId = requestAnimationFrame(check);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -528,7 +558,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     fg.d3Force("bounds", forceBounds(bounds));
     fg.d3ReheatSimulation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graphData, bounds]);
+  }, [graphData, bounds, fgReady]);
 
   // Camera framing — the engine has no built-in "fit to content" on its
   // own; left alone it renders at a fixed 1 graph-unit = 1 pixel scale
