@@ -493,6 +493,16 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   // its end state the instant a hover starts.
   const visualPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
+  // Labels are queued here during nodeCanvasObject (once per node, in
+  // whatever order the library iterates them — not z-order aware) and
+  // actually drawn later, in onRenderFramePost, once every node's circle
+  // for this frame has already been painted. Without this split, a label
+  // could end up drawn before a *later* node's circle and get visually
+  // covered by it, since nodeCanvasObject has no way to control draw order
+  // across different nodes on its own.
+  type PendingLabel = { x: number; y: number; text: string; fontSize: number; color: string };
+  const pendingLabelsRef = useRef<PendingLabel[]>([]);
+
   // Nothing else causes a repaint while a hover-triggered transition is
   // in flight — react-force-graph-2d only actually redraws in response to
   // an engine tick, a zoom/pan, or a handful of its own internal setters,
@@ -601,6 +611,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             // React render) so the eased scale feeding into it is always
             // read at that frame's own timestamp.
             visualPositionsRef.current = computeVisualPositions();
+            pendingLabelsRef.current = [];
 
             // ctx is already in graph-coordinate space here (same space
             // node.x/node.y are drawn in), so the wall's own bounds can be
@@ -616,6 +627,18 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
               bounds.yMax - bounds.yMin
             );
             ctx.restore();
+          }}
+          onRenderFramePost={(ctx) => {
+            // Drawn after every node's circle for this frame (see the
+            // queueing comment by pendingLabelsRef above), so a label is
+            // never covered by a node that happened to be painted after it.
+            for (const label of pendingLabelsRef.current) {
+              ctx.font = `${label.fontSize}px sans-serif`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "top";
+              ctx.fillStyle = label.color;
+              ctx.fillText(label.text, label.x, label.y);
+            }
           }}
           nodeLabel={() => ""}
           onNodeHover={(node) => setHoveredId((node as FGNode | null)?.id ?? null)}
@@ -652,14 +675,21 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
 
             if (isHovered || isNeighbor) {
               const label = (node as FGNode).graphLabel ?? (node as FGNode).name;
-              ctx.font = `${isHovered ? 6 : 4.5}px sans-serif`;
-              ctx.textAlign = "center";
-              ctx.textBaseline = "top";
-              ctx.fillStyle = `rgba(128, 128, 128, ${opacity})`;
-              ctx.fillText(label, x, y + radius + 3);
+              pendingLabelsRef.current.push({
+                x,
+                y: y + radius + 3,
+                text: label,
+                fontSize: isHovered ? 6 : 4.5,
+                color: `rgba(255, 255, 255, ${opacity})`,
+              });
               if (isHovered) {
-                ctx.font = "3px sans-serif";
-                ctx.fillText((node as FGNode).type, x, y + radius + 3 + 7);
+                pendingLabelsRef.current.push({
+                  x,
+                  y: y + radius + 3 + 7,
+                  text: (node as FGNode).type,
+                  fontSize: 3,
+                  color: `rgba(255, 255, 255, ${opacity * 0.7})`,
+                });
               }
             }
           }}
