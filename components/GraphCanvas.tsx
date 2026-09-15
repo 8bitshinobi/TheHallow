@@ -129,11 +129,12 @@ function colorForType(type: string): string {
 // `d` bottoms out at -1, so the offset never exceeds PUSH_STRENGTH no
 // matter how close two nodes get. Verified against the real migrated data
 // (both a low-degree and a high-degree ~7-neighbor hub): pushed neighbors
-// fan out cleanly, edges and hit-testing track the offset correctly (see
-// pushOffsetForNode's use in nodeCanvasObject/nodePointerAreaPaint/
-// linkCanvasObject below), and un-hovering resets instantly with no
-// residual drift, since nothing here is stateful — it's recomputed fresh
-// every frame from the current hover id alone.
+// fan out cleanly, edges and hit-testing track the offset correctly, and
+// un-hovering resets instantly with no residual drift, since nothing here
+// is stateful — it's recomputed fresh every frame from the current hover
+// id alone. This only pushes a node away from the *hovered* node, though —
+// see computeVisualPositions below for the pass that also keeps two
+// bumped-up neighbors from overlapping each other.
 const PUSH_GAP = 4;
 const PUSH_STRENGTH = 26;
 
@@ -312,12 +313,86 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     return map;
   }, [graphData]);
 
-  function pushOffsetForNode(id: string, x: number, y: number): { dx: number; dy: number } {
-    if (!hoveredId || id === hoveredId) return { dx: 0, dy: 0 };
-    const mover = nodeById.get(hoveredId);
-    if (!mover || mover.x === undefined || mover.y === undefined) return { dx: 0, dy: 0 };
-    return pushOffset(x, y, currentRadius(id), mover.x, mover.y, currentRadius(hoveredId));
+  // Visual (render-time only, no physics) positions for this frame: start
+  // from the settled simulation position, push everything away from the
+  // hovered node's grown radius, then resolve any overlap left between
+  // *any* pair of nodes — not just each one's distance from the hovered
+  // node. That second pass matters because pushOffset alone only
+  // guarantees a node clears the hovered node itself; two of its
+  // neighbors, both bumped up to SECONDARY_HOVER_SCALE, can easily still
+  // be too close to *each other* after that first pass, since neither one
+  // was ever checked against the other. A few Gauss-Seidel-style
+  // relaxation passes are enough to settle a few dozen nodes; the hovered
+  // node itself is never moved by either pass, so it stays the fixed
+  // visual anchor everything else arranges around.
+  const OVERLAP_GAP = 4;
+  const OVERLAP_ITERATIONS = 3;
+
+  function computeVisualPositions(): Map<string, { x: number; y: number }> {
+    const positions = new Map<string, { x: number; y: number }>();
+    for (const node of graphData.nodes) {
+      if (node.x === undefined || node.y === undefined) continue;
+      positions.set(node.id, { x: node.x, y: node.y });
+    }
+
+    if (hoveredId) {
+      const mover = positions.get(hoveredId);
+      if (mover) {
+        for (const [id, pos] of positions) {
+          if (id === hoveredId) continue;
+          const { dx, dy } = pushOffset(
+            pos.x,
+            pos.y,
+            currentRadius(id),
+            mover.x,
+            mover.y,
+            currentRadius(hoveredId)
+          );
+          pos.x += dx;
+          pos.y += dy;
+        }
+      }
+    }
+
+    const ids = [...positions.keys()];
+    for (let iteration = 0; iteration < OVERLAP_ITERATIONS; iteration++) {
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          const idA = ids[i];
+          const idB = ids[j];
+          const a = positions.get(idA)!;
+          const b = positions.get(idB)!;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.hypot(dx, dy) || 0.001;
+          const minDist = currentRadius(idA) + currentRadius(idB) + OVERLAP_GAP;
+          if (dist >= minDist) continue;
+          const overlap = minDist - dist;
+          const ux = dx / dist;
+          const uy = dy / dist;
+          const aFixed = idA === hoveredId;
+          const bFixed = idB === hoveredId;
+          if (aFixed && bFixed) continue;
+          if (aFixed) {
+            b.x += ux * overlap;
+            b.y += uy * overlap;
+          } else if (bFixed) {
+            a.x -= ux * overlap;
+            a.y -= uy * overlap;
+          } else {
+            a.x -= (ux * overlap) / 2;
+            a.y -= (uy * overlap) / 2;
+            b.x += (ux * overlap) / 2;
+            b.y += (uy * overlap) / 2;
+          }
+        }
+      }
+    }
+
+    return positions;
   }
+
+  const visualPositions = computeVisualPositions();
 
   // Force setup — link distance/charge/collide tuned to the same "tight
   // clusters, disconnected components kept in the same neighborhood"
@@ -422,11 +497,9 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           onNodeClick={(node) => router.push(hrefFor((node as FGNode).id))}
           nodeCanvasObject={(node, ctx) => {
             const id = (node as FGNode).id;
-            const simX = node.x ?? 0;
-            const simY = node.y ?? 0;
-            const { dx, dy } = pushOffsetForNode(id, simX, simY);
-            const x = simX + dx;
-            const y = simY + dy;
+            const pos = visualPositions.get(id);
+            const x = pos?.x ?? node.x ?? 0;
+            const y = pos?.y ?? node.y ?? 0;
             const tier = depthTiers.get(id) ?? 1;
             const { opacity } = DEPTH_TIERS[tier];
             const radius = currentRadius(id);
@@ -467,11 +540,9 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           }}
           nodePointerAreaPaint={(node, color, ctx) => {
             const id = (node as FGNode).id;
-            const simX = node.x ?? 0;
-            const simY = node.y ?? 0;
-            const { dx, dy } = pushOffsetForNode(id, simX, simY);
-            const x = simX + dx;
-            const y = simY + dy;
+            const pos = visualPositions.get(id);
+            const x = pos?.x ?? node.x ?? 0;
+            const y = pos?.y ?? node.y ?? 0;
             // A flat, generous padding regardless of tier — canvas
             // hit-testing is a dedicated per-pixel lookup (not overlapping
             // DOM elements), so there's no risk of two nearby hit zones
@@ -496,8 +567,8 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             if (fromNode?.x === undefined || fromNode.y === undefined) return;
             if (toNode?.x === undefined || toNode.y === undefined) return;
 
-            const fromOffset = pushOffsetForNode(fromNode.id, fromNode.x, fromNode.y);
-            const toOffset = pushOffsetForNode(toNode.id, toNode.x, toNode.y);
+            const fromPos = visualPositions.get(fromNode.id) ?? { x: fromNode.x, y: fromNode.y };
+            const toPos = visualPositions.get(toNode.id) ?? { x: toNode.x, y: toNode.y };
 
             const tierFrom = depthTiers.get(fromNode.id) ?? 1;
             const tierTo = depthTiers.get(toNode.id) ?? 1;
@@ -506,8 +577,8 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
               hoveredId !== null && (fromNode.id === hoveredId || toNode.id === hoveredId);
 
             ctx.beginPath();
-            ctx.moveTo(fromNode.x + fromOffset.dx, fromNode.y + fromOffset.dy);
-            ctx.lineTo(toNode.x + toOffset.dx, toNode.y + toOffset.dy);
+            ctx.moveTo(fromPos.x, fromPos.y);
+            ctx.lineTo(toPos.x, toPos.y);
             ctx.strokeStyle = isActive
               ? "rgba(107, 114, 128, 1)"
               : `rgba(128, 128, 128, ${DEPTH_TIERS[edgeTier].opacity * 0.4})`;
