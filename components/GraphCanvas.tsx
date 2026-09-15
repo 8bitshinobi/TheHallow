@@ -420,7 +420,39 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
   const OVERLAP_GAP = 4;
   const OVERLAP_ITERATIONS = 3;
 
-  function computeVisualPositions(): Map<string, { x: number; y: number }> {
+  // How much a node's own *label* sticks out past its circle — a label is
+  // usually far wider than the dot it's attached to, so spacing nodes
+  // apart by circle radius alone (as computeVisualPositions used to)
+  // leaves plenty of room between the dots while their text still
+  // overlaps. Measured with the real canvas context and the exact font
+  // each label draws with (see the matching onRenderFramePost above), not
+  // estimated, so it tracks each node's actual name length.
+  function labelHalfExtentFor(ctx: CanvasRenderingContext2D, id: string): number {
+    const tier = depthTiers.get(id) ?? 1;
+    const isHovered = id === hoveredId;
+    const isNeighbor = tier === 1 && hoveredId !== null;
+    if (!isHovered && !isNeighbor) return 0;
+    const node = nodeById.get(id);
+    if (!node) return 0;
+    ctx.font = `${isHovered ? 6 : 4.5}px sans-serif`;
+    let width = ctx.measureText(node.graphLabel ?? node.name).width;
+    if (isHovered) {
+      ctx.font = "3px sans-serif";
+      width = Math.max(width, ctx.measureText(node.type).width);
+    }
+    return width / 2;
+  }
+
+  // The radius used for *spacing* nodes apart — bigger than the drawn
+  // circle whenever a label is attached, so pushing/overlap-resolution
+  // below treats a labeled node as roughly as wide as its own text.
+  function spacingRadiusFor(ctx: CanvasRenderingContext2D, id: string): number {
+    return animatedRadiusFor(id) + labelHalfExtentFor(ctx, id);
+  }
+
+  function computeVisualPositions(
+    ctx: CanvasRenderingContext2D
+  ): Map<string, { x: number; y: number }> {
     const positions = new Map<string, { x: number; y: number }>();
     for (const node of graphData.nodes) {
       if (node.x === undefined || node.y === undefined) continue;
@@ -435,10 +467,10 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           const { dx, dy } = pushOffset(
             pos.x,
             pos.y,
-            animatedRadiusFor(id),
+            spacingRadiusFor(ctx, id),
             mover.x,
             mover.y,
-            animatedRadiusFor(hoveredId)
+            spacingRadiusFor(ctx, hoveredId)
           );
           pos.x += dx;
           pos.y += dy;
@@ -457,7 +489,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const dist = Math.hypot(dx, dy) || 0.001;
-          const minDist = animatedRadiusFor(idA) + animatedRadiusFor(idB) + OVERLAP_GAP;
+          const minDist = spacingRadiusFor(ctx, idA) + spacingRadiusFor(ctx, idB) + OVERLAP_GAP;
           if (dist >= minDist) continue;
           const overlap = minDist - dist;
           const ux = dx / dist;
@@ -610,7 +642,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             // Recomputed fresh every actual repainted frame (not once per
             // React render) so the eased scale feeding into it is always
             // read at that frame's own timestamp.
-            visualPositionsRef.current = computeVisualPositions();
+            visualPositionsRef.current = computeVisualPositions(ctx);
             pendingLabelsRef.current = [];
 
             // ctx is already in graph-coordinate space here (same space
