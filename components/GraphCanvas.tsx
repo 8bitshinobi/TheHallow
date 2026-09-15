@@ -114,6 +114,41 @@ function colorForType(type: string): string {
   return PALETTE[hashString(type) % PALETTE.length];
 }
 
+// SPIKE: render-time-only "push" offset, so hovering a node visually shoves
+// nearby nodes aside without touching the underlying d3-force simulation
+// (the earlier attempt at this drove it through the simulation itself -
+// growing the collide radius and calling d3ReheatSimulation() - which
+// reset the simulation's alpha to 1 and re-armed every force, not just
+// collide, so the whole graph visibly reorganized instead of a local
+// nudge; reverted twice, see the comment above the force-setup effect
+// below). This is the same "pull when far, push when close" idea from
+// https://www.deconbatch.com/2023/11/pushpull01.html.html, pared down to
+// push-only (no pull - an unhovered node drifting toward the cursor would
+// read as wrong) and phrased with a direction vector instead of
+// heading/cos/sin. Magnitude is naturally bounded: at zero separation
+// `d` bottoms out at -1, so the offset never exceeds PUSH_STRENGTH no
+// matter how close two nodes get.
+const PUSH_GAP = 4;
+const PUSH_STRENGTH = 26;
+
+function pushOffset(
+  x: number,
+  y: number,
+  radius: number,
+  moverX: number,
+  moverY: number,
+  moverRadius: number
+): { dx: number; dy: number } {
+  const awayX = x - moverX;
+  const awayY = y - moverY;
+  const dist = Math.hypot(awayX, awayY) || 0.001;
+  const baseDist = moverRadius + radius + PUSH_GAP;
+  const d = (dist - baseDist) / baseDist;
+  if (d >= 0) return { dx: 0, dy: 0 };
+  const magnitude = -d * PUSH_STRENGTH;
+  return { dx: (awayX / dist) * magnitude, dy: (awayY / dist) * magnitude };
+}
+
 type Bounds = { xMin: number; xMax: number; yMin: number; yMax: number };
 
 // A custom d3-force "wall". d3-force's tick loop calls every registered
@@ -262,6 +297,22 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
     [nodes, edges]
   );
 
+  // graphData.nodes are the exact objects the engine mutates in place each
+  // tick, so this map's entries stay live (.x/.y current) without needing
+  // to be rebuilt every frame - only when the node/edge set itself changes.
+  const nodeById = useMemo(() => {
+    const map = new Map<string, FGNode>();
+    for (const n of graphData.nodes) map.set(n.id, n);
+    return map;
+  }, [graphData]);
+
+  function pushOffsetForNode(id: string, x: number, y: number): { dx: number; dy: number } {
+    if (!hoveredId || id === hoveredId) return { dx: 0, dy: 0 };
+    const mover = nodeById.get(hoveredId);
+    if (!mover || mover.x === undefined || mover.y === undefined) return { dx: 0, dy: 0 };
+    return pushOffset(x, y, currentRadius(id), mover.x, mover.y, currentRadius(hoveredId));
+  }
+
   // Force setup — link distance/charge/collide tuned to the same "tight
   // clusters, disconnected components kept in the same neighborhood"
   // character established earlier, just running as a live simulation
@@ -365,8 +416,11 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           onNodeClick={(node) => router.push(hrefFor((node as FGNode).id))}
           nodeCanvasObject={(node, ctx) => {
             const id = (node as FGNode).id;
-            const x = node.x ?? 0;
-            const y = node.y ?? 0;
+            const simX = node.x ?? 0;
+            const simY = node.y ?? 0;
+            const { dx, dy } = pushOffsetForNode(id, simX, simY);
+            const x = simX + dx;
+            const y = simY + dy;
             const tier = depthTiers.get(id) ?? 1;
             const { opacity } = DEPTH_TIERS[tier];
             const radius = currentRadius(id);
@@ -407,8 +461,11 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           }}
           nodePointerAreaPaint={(node, color, ctx) => {
             const id = (node as FGNode).id;
-            const x = node.x ?? 0;
-            const y = node.y ?? 0;
+            const simX = node.x ?? 0;
+            const simY = node.y ?? 0;
+            const { dx, dy } = pushOffsetForNode(id, simX, simY);
+            const x = simX + dx;
+            const y = simY + dy;
             // A flat, generous padding regardless of tier — canvas
             // hit-testing is a dedicated per-pixel lookup (not overlapping
             // DOM elements), so there's no risk of two nearby hit zones
@@ -420,20 +477,36 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             ctx.fillStyle = color;
             ctx.fill();
           }}
-          linkColor={(link) => {
-            const from = typeof link.source === "object" ? (link.source as FGNode).id : link.source;
-            const to = typeof link.target === "object" ? (link.target as FGNode).id : link.target;
-            const isActive = hoveredId !== null && (from === hoveredId || to === hoveredId);
-            const tierFrom = depthTiers.get(from as string) ?? 1;
-            const tierTo = depthTiers.get(to as string) ?? 1;
+          // Drawn manually (instead of linkColor/linkWidth) so a link's
+          // endpoints follow the same render-time push offset as the nodes
+          // themselves - otherwise a pushed node's edges would visibly
+          // detach from it while hovering.
+          linkCanvasObjectMode={() => "replace"}
+          linkCanvasObject={(link, ctx) => {
+            const source = link.source as FGNode | string;
+            const target = link.target as FGNode | string;
+            const fromNode = typeof source === "object" ? source : nodeById.get(source);
+            const toNode = typeof target === "object" ? target : nodeById.get(target);
+            if (fromNode?.x === undefined || fromNode.y === undefined) return;
+            if (toNode?.x === undefined || toNode.y === undefined) return;
+
+            const fromOffset = pushOffsetForNode(fromNode.id, fromNode.x, fromNode.y);
+            const toOffset = pushOffsetForNode(toNode.id, toNode.x, toNode.y);
+
+            const tierFrom = depthTiers.get(fromNode.id) ?? 1;
+            const tierTo = depthTiers.get(toNode.id) ?? 1;
             const edgeTier = Math.max(tierFrom, tierTo) as 0 | 1 | 2 | 3;
-            if (isActive) return "rgba(107, 114, 128, 1)";
-            return `rgba(128, 128, 128, ${DEPTH_TIERS[edgeTier].opacity * 0.4})`;
-          }}
-          linkWidth={(link) => {
-            const from = typeof link.source === "object" ? (link.source as FGNode).id : link.source;
-            const to = typeof link.target === "object" ? (link.target as FGNode).id : link.target;
-            return hoveredId !== null && (from === hoveredId || to === hoveredId) ? 2 : 1;
+            const isActive =
+              hoveredId !== null && (fromNode.id === hoveredId || toNode.id === hoveredId);
+
+            ctx.beginPath();
+            ctx.moveTo(fromNode.x + fromOffset.dx, fromNode.y + fromOffset.dy);
+            ctx.lineTo(toNode.x + toOffset.dx, toNode.y + toOffset.dy);
+            ctx.strokeStyle = isActive
+              ? "rgba(107, 114, 128, 1)"
+              : `rgba(128, 128, 128, ${DEPTH_TIERS[edgeTier].opacity * 0.4})`;
+            ctx.lineWidth = isActive ? 2 : 1;
+            ctx.stroke();
           }}
         />
       ) : null}
