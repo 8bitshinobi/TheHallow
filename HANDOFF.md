@@ -1,6 +1,6 @@
 # Handoff — The Hallow Archive
 
-Last updated: 2026-09-14
+Last updated: 2026-09-21
 
 ## Where things stand
 
@@ -10,6 +10,37 @@ Last updated: 2026-09-14
 **Local dev:** `npm run dev`, needs `.env.local` (see `.env.local.example`) — Project URL + Publishable key from Supabase dashboard → Project Settings → API Keys. A `SUPABASE_SECRET_KEY` also lives in `.env.local`, used only by the scripts in `scripts/migrate/` (never by the app itself, never committed).
 
 v1 scope (per the original plan): Scott-only admin app, no player accounts/suggestion queue yet — that's still a deferred phase 2.
+
+## Session status (2026-09-21)
+
+_Overwritten at the end of each session; the sections below are the durable reference._
+
+**What changed and why.** Added two generator pages that follow the archive's object model (established + procedural), public read-only APIs so other sites can consume finished content, per-object icons, and a graph restyle.
+
+- **Tavern generator** (`/taverns`, `components/TavernGenerator.tsx`, `lib/taverns/`): Location + Patron Crowd filters, Generate (30% chance to pull a real public tavern, else procedural), per-field rerolls, established/new tag, "Save this tavern" (POST → private draft). Lists: 3–5 drinks, 5–7 food, 3–15 patrons, 3–5 rumors (about half real lore hooks, half gossip). ~25% get a "house specialty"; if the location has a `tavern_specialties` property (one per line) it picks from those, else builds one from placeholder pieces plus the location's `tavern_theme`.
+- **Business generator** (`/businesses`, `components/BusinessGenerator.tsx`, `lib/businesses/`): same pattern; Location + Category filters. Categories: Blacksmith, Stable, Apothecary, Jeweler, General goods, Tailor, Bakery, Bookseller, Wine/Spirits, plus illicit-front categories (Pawnbroker, Curio shop, Import warehouse, Tea house, Moneylender, Funeral parlor, Bathhouse). Businesses can have a **GM-only hidden front** (`front_for`, e.g. "Fence: ...") shown in a dashed box on the card and saved on the object, but never returned by the public API.
+- **Public APIs** (`/api/places` = taverns, `/api/businesses`): both built from one factory, `lib/api/objectRoute.ts`. GET is anon, whitelisted fields only, cache headers; POST requires the login session and forces `visibility: private` + `status: in_development`. `proxy.ts` lets only those two paths skip the login redirect. **Nothing is public by default**: an object is readable by anon only if its type is `tavern`/`business` AND `properties.visibility = 'public'` (enforced by RLS, not just app code).
+- **Object icons** (`lib/icons.ts`): resolved at display time, never stored: manual `properties.icon` → category icon → type icon → ◆. Shown in the `/objects` list and type chips, object header, connections list, connection picker, `@mention` dropdown, both generators, and the graph. Object page has an Icon field that writes `properties.icon` (kept out of the generic properties editor so the two don't overwrite each other).
+- **Graph** (`components/GraphCanvas.tsx`): nodes are now colored outline rings (hashed type color) with the icon centered inside (glyph bounding box measured, since `textBaseline: "middle"` sits color emoji off-center). Tried and reverted this session: white NPC / black creature / pale-blue place fills and a vector paw print, superseded by the ring style.
+- **Data changes made directly in the live DB:** The Marrowlands and The Graveyard of Broken Promises retyped `place` → `region` (The Loop Region stays `place`); Marrowlands got a `tavern_theme` and 8 made-up `tavern_specialties` (not canon); Graveyard's `tavern_theme` is intentionally blank.
+- **CSV import** (`scripts/migrate/places-csv.mjs`, dry-run by default, `--apply` to write, safe to re-run): 27 places from the Capacities `Places_All.csv` created — Tamarack → `tavern`; Burgeon & Bloom (Apothecary), Kidia and Old Moon (Jeweler) → `business`; The Iron Crag (City) and Oakfell (Town) + 21 uncategorized rows → `place`. Iron Crag rows have `location: "The Iron Crag"`, `district` (the CSV's original wording), and a "located in" edge. Skipped the CSV's "How to Use This Place Notes Object" row. Locations for the generators now = regions + places with category Town/City (`lib/generatorData.ts`).
+
+**Files touched.** New: `app/taverns/*`, `app/businesses/*`, `app/api/businesses/route.ts`, `components/{TavernGenerator,BusinessGenerator,generatorParts}.tsx`, `lib/{icons,generatorData}.ts`, `lib/api/objectRoute.ts`, `lib/taverns/*`, `lib/businesses/*`, `scripts/migrate/places-csv.mjs`, `supabase/migrations/0002_public_taverns.sql`, `0003_public_businesses.sql`. Modified: `proxy.ts`, `app/api/places/route.ts`, `app/objects/{page,layout,actions}.ts(x)`, `app/objects/[id]/page.tsx`, `components/{GraphCanvas,ConnectionList,ConnectionPicker,MentionTextarea,ObjectPropertiesPanel}.tsx`, `lib/{objects,types}.ts`.
+
+**Decisions.**
+- Taverns and businesses are their own object types (per the per-category-type convention), not `place` + a `kind` property.
+- Access is opt-in via a `visibility: public` property, enforced by an RLS policy; the API returns a whitelist of fields, so GM notes added to those objects later can't leak.
+- Icon stored as a property (`properties.icon`), not a column; automatic icons are computed, so a manual choice can never be overwritten.
+- `tavern_theme` / `tavern_specialties` on a location are the (real / abstract) link between a location and its taverns' flavor. Businesses reuse `tavern_theme`.
+- All generator content tables (`lib/taverns/tables.ts`, `lib/businesses/tables.ts`) are **placeholder** filler, not Hallow canon.
+
+**Blockers / next steps.**
+1. **Apply `supabase/migrations/0003_public_businesses.sql`** in the Supabase SQL editor (0002 is applied). Until then `/api/businesses` returns nothing even for public businesses. I can't run DDL (no `psql`/CLI/DB URL).
+2. **Nothing from this session has been checked logged-in.** Look at: the generators (Generate/rerolls/Save), the Icon field on an object, and the graph (ring look, icon centering and size, per-object and whole-archive views). Verification so far = typecheck, lint, `next build`, and unauthenticated API calls only.
+3. 21 imported places have no category; some look like taverns (Greenwing Tavern, Two Towns Tavern, The Versatile Spirit, The Ink and Thistle) or drink shops (Silver Sip, Iron Barrel, Decanted Dreams, Cork & Barrel, Nocturne Nectar); left as plain `place` rather than guessed.
+4. Lore rumors use placeholder hooks until lore records are marked `visibility: public` (only names are ever used). "Drawing-season" patron lines are guesses (term isn't defined in the archive).
+5. Not done: icons on inline `@mention` links (text stores only name+id); Icon field on the new-object form; nodes for tavern/region/lore/business share or nearly share colors.
+6. Nothing has been pushed; pushing `main` auto-deploys via Vercel.
 
 ## What's built
 

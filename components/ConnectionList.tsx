@@ -34,6 +34,7 @@ export function ConnectionList({
           <li key={connection.edgeId} className="flex items-center justify-between py-1.5">
             <span className="text-sm">
               {arrow === "outgoing" ? "→ " : "← "}
+              <span aria-hidden>{connection.object.icon}</span>{" "}
               <Link href={`/objects/${connection.object.id}`} className="underline">
                 {connection.object.name}
               </Link>{" "}

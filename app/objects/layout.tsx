@@ -13,6 +13,9 @@ export default function ObjectsLayout({ children }: { children: React.ReactNode 
             <Link href="/taverns" className="text-sm text-black/60 underline dark:text-white/60">
               Taverns
             </Link>
+            <Link href="/businesses" className="text-sm text-black/60 underline dark:text-white/60">
+              Businesses
+            </Link>
             <Link href="/objects/graph" className="text-sm text-black/60 underline dark:text-white/60">
               Graph
             </Link>

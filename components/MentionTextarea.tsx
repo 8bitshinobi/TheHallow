@@ -7,7 +7,7 @@ import { createObject, listTypes, searchObjects } from "@/app/objects/actions";
 import { formatMention, hasMention, parseMentions } from "@/lib/mentions";
 import { rethrowIfRedirectError } from "@/lib/utils";
 
-type SearchResult = { id: string; type: string; name: string };
+type SearchResult = { id: string; type: string; name: string; icon?: string };
 
 const NEW_TYPE_VALUE = "__new__";
 
@@ -296,6 +296,7 @@ export function MentionTextarea({ value, onChange, placeholder, excludeId }: Pro
                   i === activeIndex ? "bg-black/5 dark:bg-white/10" : ""
                 }`}
               >
+                <span aria-hidden>{result.icon}</span>{" "}
                 <span className="text-black/50 dark:text-white/50">{result.type}</span>{" "}
                 {result.name}
               </button>

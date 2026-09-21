@@ -6,7 +6,7 @@ import { createEdge, searchObjects } from "@/app/objects/actions";
 import { rethrowIfRedirectError } from "@/lib/utils";
 import type { HallowObject } from "@/lib/types";
 
-type SearchResult = Pick<HallowObject, "id" | "type" | "name">;
+type SearchResult = Pick<HallowObject, "id" | "type" | "name"> & { icon?: string };
 
 export function ConnectionPicker({ objectId }: { objectId: string }) {
   const router = useRouter();
@@ -79,6 +79,7 @@ export function ConnectionPicker({ objectId }: { objectId: string }) {
           {results.map((result) => (
             <li key={result.id} className="flex items-center justify-between py-1.5">
               <span className="text-sm">
+                <span aria-hidden>{result.icon}</span>{" "}
                 <span className="text-black/50 dark:text-white/50">{result.type}</span>{" "}
                 {result.name}
               </span>

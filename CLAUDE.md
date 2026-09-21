@@ -69,6 +69,29 @@ this app, not a nice-to-have:
 - **Players / PCs** — player characters: identity, history, motivations,
   associations. Each PC has an **owner** (the player). Distinct from NPCs.
 
+## Added types, generators, and public read access (2026-09-21)
+
+Types added beyond the inventory above (types are free-form strings):
+- **Regions** (`region`) vs **places** (`place`): regions are large areas (The
+  Marrowlands); places are specific locations/settlements. A place with
+  `category` Town/City counts as a *location* for the generators.
+- **Taverns** (`tavern`) and **Businesses** (`business`, with a `category`
+  property). Both are made by generator pages (`/taverns`, `/businesses`) that
+  mix real "established" objects with procedurally generated ones; saved
+  generations are private drafts. All generator content tables are placeholder
+  filler, not canon.
+
+**Public read access is opt-in per object.** A tavern/business is readable
+without login (via `/api/places`, `/api/businesses`) only when its type matches
+AND `properties.visibility = 'public'`, enforced by an RLS policy for the
+`anon` role (migrations 0002/0003). The APIs return a whitelist of fields, so
+GM-only properties (e.g. a business's `front_for`) are never exposed. There is
+no anonymous write path; POST requires the login session.
+
+**Icons:** shown for any object; resolved at display time from `properties.icon`
+(manual override), then category, then type (`lib/icons.ts`). Never stored
+automatically.
+
 ## Multi-user access: players and suggestions
 
 Players (not just Scott) need access to this system, specifically to their own PC's

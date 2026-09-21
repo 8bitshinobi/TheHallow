@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { iconFor } from "@/lib/icons";
 import { GraphCanvas } from "@/components/GraphCanvas";
 import { listAllEdges, listAllObjectsLight, listObjects, listObjectTypes } from "@/lib/objects";
 
@@ -61,7 +62,7 @@ export default async function ObjectsPage({
                     : "border-black/15 dark:border-white/15"
                 }`}
               >
-                {t}
+                {iconFor(t)} {t}
               </Link>
             ))}
           </div>
@@ -75,6 +76,7 @@ export default async function ObjectsPage({
               {objects.map((object) => (
                 <li key={object.id} className="py-2">
                   <Link href={`/objects/${object.id}`} className="text-sm">
+                    <span aria-hidden>{iconFor(object.type, object.properties)}</span>{" "}
                     <span className="text-black/50 dark:text-white/50">{object.type}</span>{" "}
                     <span className="font-medium">{object.name}</span>
                   </Link>

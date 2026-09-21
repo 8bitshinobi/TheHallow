@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { extractMentionIds } from "@/lib/mentions";
+import { iconFor } from "@/lib/icons";
 import type { HallowObject } from "@/lib/types";
 
 async function requireUser() {
@@ -105,14 +106,14 @@ export async function listTypes(): Promise<string[]> {
 export async function searchObjects(
   query: string,
   excludeId?: string
-): Promise<Pick<HallowObject, "id" | "type" | "name">[]> {
+): Promise<(Pick<HallowObject, "id" | "type" | "name"> & { icon: string })[]> {
   const supabase = await requireUser();
 
   if (!query.trim()) return [];
 
   let dbQuery = supabase
     .from("objects")
-    .select("id, type, name")
+    .select("id, type, name, properties")
     .ilike("name", `%${query.trim()}%`)
     .order("name")
     .limit(10);
@@ -121,7 +122,12 @@ export async function searchObjects(
 
   const { data, error } = await dbQuery;
   if (error) throw new Error(error.message);
-  return data ?? [];
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    type: row.type,
+    name: row.name,
+    icon: iconFor(row.type, row.properties),
+  }));
 }
 
 export async function createEdge(

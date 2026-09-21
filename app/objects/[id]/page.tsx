@@ -4,6 +4,7 @@ import { ConnectionList } from "@/components/ConnectionList";
 import { ConnectionPicker } from "@/components/ConnectionPicker";
 import { DeleteObjectButton } from "@/components/DeleteObjectButton";
 import { ObjectPropertiesPanel } from "@/components/ObjectPropertiesPanel";
+import { iconFor } from "@/lib/icons";
 import {
   getIncomingConnections,
   getObject,
@@ -30,7 +31,9 @@ export default async function ObjectDetailPage({
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-black/50 dark:text-white/50">{object.type}</p>
-          <h1 className="text-xl font-semibold">{object.name}</h1>
+          <h1 className="text-xl font-semibold">
+            <span aria-hidden>{iconFor(object.type, object.properties)}</span> {object.name}
+          </h1>
         </div>
         <DeleteObjectButton objectId={object.id} objectName={object.name} />
       </div>

@@ -2,23 +2,20 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import {
-  generateTavern,
-  rerollField,
-  toLines,
-  type CrowdChoice,
-  type GenContext,
-  type Region,
-  type RerollField,
-  type TavernCard,
-} from "@/lib/taverns/generate";
-import { iconFor } from "@/lib/icons";
 import { Field, List } from "@/components/generatorParts";
-import { CROWDS } from "@/lib/taverns/tables";
+import {
+  canHaveFront,
+  generateBusiness,
+  rerollBusinessField,
+  type BusinessCard,
+  type BusinessContext,
+  type BusinessRerollField,
+} from "@/lib/businesses/generate";
+import { CATEGORY_NAMES } from "@/lib/businesses/tables";
+import { iconFor } from "@/lib/icons";
+import { toLines, type Region } from "@/lib/taverns/generate";
 
-const CROWD_OPTIONS: CrowdChoice[] = ["Any", ...CROWDS];
-
-/** Chance of showing a real public tavern (when one matches) instead of a new one. */
+/** Chance of showing a real public business (when one matches) instead of a new one. */
 const ESTABLISHED_CHANCE = 0.3;
 
 type SaveState =
@@ -27,42 +24,35 @@ type SaveState =
   | { status: "saved"; id: string }
   | { status: "error"; message: string };
 
-type ApiTavern = {
+type ApiBusiness = {
   id: string;
   name: string;
+  category: string;
   description: string;
-  innkeeper: string;
-  innkeeper_quirk: string;
-  signature: string;
-  signature_kind: string;
+  proprietor: string;
+  proprietor_quirk: string;
   icon: string;
-  drinks: string[];
-  food: string[];
+  goods: string[];
   patrons: string[];
   rumors: string[];
   location: string;
 };
 
-function fromApi(tavern: ApiTavern, regions: Region[]): TavernCard {
+function fromApi(business: ApiBusiness, regions: Region[]): BusinessCard {
   return {
     established: true,
-    id: tavern.id,
-    icon: tavern.icon || undefined,
-    name: tavern.name,
-    description: tavern.description,
-    innkeeper: tavern.innkeeper,
-    innkeeperQuirk: tavern.innkeeper_quirk,
-    signature: tavern.signature || undefined,
-    signatureKind:
-      tavern.signature_kind === "drink" || tavern.signature_kind === "food"
-        ? tavern.signature_kind
-        : undefined,
-    drinks: tavern.drinks,
-    food: tavern.food,
-    patrons: tavern.patrons,
-    rumors: tavern.rumors.map((text) => ({ text })),
-    location: tavern.location,
-    locationId: regions.find((region) => region.name === tavern.location)?.id,
+    id: business.id,
+    icon: business.icon || undefined,
+    name: business.name,
+    category: business.category,
+    description: business.description,
+    proprietor: business.proprietor,
+    proprietorQuirk: business.proprietor_quirk,
+    goods: business.goods,
+    patrons: business.patrons,
+    rumors: business.rumors.map((text) => ({ text })),
+    location: business.location,
+    locationId: regions.find((region) => region.name === business.location)?.id,
   };
 }
 
@@ -71,16 +61,16 @@ const selectClass =
 const buttonClass =
   "rounded border border-black/15 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-white/15";
 
-export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: string[] }) {
+export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks: string[] }) {
   const [regionId, setRegionId] = useState("");
-  const [crowd, setCrowd] = useState<CrowdChoice>("Any");
-  const [card, setCard] = useState<TavernCard | null>(null);
+  const [category, setCategory] = useState("Any");
+  const [card, setCard] = useState<BusinessCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [save, setSave] = useState<SaveState>({ status: "idle" });
 
-  const context: GenContext = {
+  const context: BusinessContext = {
     region: regions.find((region) => region.id === regionId) ?? null,
-    crowd,
+    category,
     hooks,
   };
 
@@ -89,49 +79,49 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
     setSave({ status: "idle" });
     try {
       if (Math.random() < ESTABLISHED_CHANCE) {
-        const params = context.region ? `?location=${encodeURIComponent(context.region.name)}` : "";
-        const response = await fetch(`/api/places${params}`);
+        const params = new URLSearchParams();
+        if (context.region) params.set("location", context.region.name);
+        if (category !== "Any") params.set("category", category);
+        const response = await fetch(`/api/businesses?${params}`);
         if (response.ok) {
-          const { taverns } = (await response.json()) as { taverns: ApiTavern[] };
-          if (taverns.length > 0) {
-            const chosen = taverns[Math.floor(Math.random() * taverns.length)];
+          const { businesses } = (await response.json()) as { businesses: ApiBusiness[] };
+          if (businesses.length > 0) {
+            const chosen = businesses[Math.floor(Math.random() * businesses.length)];
             setCard(fromApi(chosen, regions));
             return;
           }
         }
       }
-      setCard(generateTavern(context));
+      setCard(generateBusiness(context));
     } finally {
       setBusy(false);
     }
   }
 
-  function reroll(field: RerollField) {
+  function reroll(field: BusinessRerollField) {
     if (!card || card.established) return;
-    setCard(rerollField(card, field, context));
+    setCard(rerollBusinessField(card, field, context));
     setSave({ status: "idle" });
   }
 
-  async function saveTavern() {
+  async function saveBusiness() {
     if (!card || card.established) return;
     setSave({ status: "saving" });
     try {
-      const response = await fetch("/api/places", {
+      const response = await fetch("/api/businesses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: card.name,
+          category: card.category,
           description: card.description,
-          innkeeper: card.innkeeper,
-          innkeeper_quirk: card.innkeeperQuirk,
-          signature: card.signature,
-          signature_kind: card.signatureKind,
-          drinks: toLines(card.drinks),
-          food: toLines(card.food),
+          proprietor: card.proprietor,
+          proprietor_quirk: card.proprietorQuirk,
+          goods: toLines(card.goods),
           patrons: toLines(card.patrons),
           rumors: toLines(card.rumors.map((rumor) => rumor.text)),
+          front_for: card.front,
           location: card.location,
-          patron_crowd: card.crowd,
           location_id: card.locationId,
         }),
       });
@@ -165,15 +155,15 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
           </select>
         </label>
         <label className="space-y-1 text-xs text-black/60 dark:text-white/60">
-          <span className="block">Patron crowd</span>
+          <span className="block">Category</span>
           <select
-            value={crowd}
-            onChange={(event) => setCrowd(event.target.value as CrowdChoice)}
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
             className={selectClass}
           >
-            {CROWD_OPTIONS.map((option) => (
+            {["Any", ...CATEGORY_NAMES].map((option) => (
               <option key={option} value={option}>
-                {option}
+                {option === "Any" ? option : `${iconFor("business", { category: option })} ${option}`}
               </option>
             ))}
           </select>
@@ -200,7 +190,9 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
           <header className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">
-                <span aria-hidden>{iconFor("tavern", card.icon ? { icon: card.icon } : null)}</span>{" "}
+                <span aria-hidden>
+                  {iconFor("business", { category: card.category, ...(card.icon ? { icon: card.icon } : {}) })}
+                </span>{" "}
                 {card.name}
               </h2>
               <span
@@ -220,34 +212,26 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
             )}
           </header>
 
-          {card.location && (
-            <p className="text-xs text-black/50 dark:text-white/50">{card.location}</p>
-          )}
+          <p className="text-xs text-black/50 dark:text-white/50">
+            {card.category}
+            {card.location ? ` · ${card.location}` : ""}
+          </p>
           <p className="text-sm">{card.description}</p>
 
-          <Field label="Innkeeper" onReroll={card.established ? undefined : () => reroll("innkeeper")}>
-            {card.innkeeper}
-            {card.innkeeperQuirk && <span className="block text-black/60 dark:text-white/60">{card.innkeeperQuirk}</span>}
+          <Field
+            label="Proprietor"
+            onReroll={card.established ? undefined : () => reroll("proprietor")}
+          >
+            {card.proprietor}
+            {card.proprietorQuirk && (
+              <span className="block text-black/60 dark:text-white/60">{card.proprietorQuirk}</span>
+            )}
           </Field>
-          {card.signature ? (
-            <Field
-              label={`House specialty${card.signatureKind ? ` (${card.signatureKind})` : ""}`}
-              onReroll={card.established ? undefined : () => reroll("signature")}
-            >
-              {card.signature}
-            </Field>
-          ) : (
-            !card.established && (
-              <button type="button" onClick={() => reroll("signature")} className="text-xs underline">
-                + add a house specialty
-              </button>
-            )
-          )}
-          <Field label="Drinks" onReroll={card.established ? undefined : () => reroll("menu")}>
-            <List items={card.drinks} />
-          </Field>
-          <Field label="Food">
-            <List items={card.food} />
+          <Field
+            label="Goods & services"
+            onReroll={card.established ? undefined : () => reroll("goods")}
+          >
+            <List items={card.goods} />
           </Field>
           <Field
             label={`Patrons (${card.patrons.length})`}
@@ -274,15 +258,33 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
             </ul>
           </Field>
 
+          {card.front ? (
+            <div className="rounded border border-dashed border-black/30 p-3 dark:border-white/30">
+              <Field
+                label="GM only — hidden front"
+                onReroll={card.established ? undefined : () => reroll("front")}
+              >
+                {card.front}
+              </Field>
+            </div>
+          ) : (
+            !card.established &&
+            canHaveFront(card.category) && (
+              <button type="button" onClick={() => reroll("front")} className="text-xs underline">
+                + add a hidden front (GM only)
+              </button>
+            )
+          )}
+
           {!card.established && (
             <footer className="flex flex-wrap items-center gap-3 border-t border-black/10 pt-3 dark:border-white/10">
               <button
                 type="button"
-                onClick={saveTavern}
+                onClick={saveBusiness}
                 disabled={save.status === "saving" || save.status === "saved"}
                 className={buttonClass}
               >
-                {save.status === "saving" ? "Saving…" : "Save this tavern"}
+                {save.status === "saving" ? "Saving…" : "Save this business"}
               </button>
               {save.status === "saved" && (
                 <span className="text-sm">

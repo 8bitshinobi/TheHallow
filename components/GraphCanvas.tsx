@@ -114,6 +114,15 @@ function colorForType(type: string): string {
   return PALETTE[hashString(type) % PALETTE.length];
 }
 
+const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+
+/** True for light colors, where a white glyph would be invisible. */
+function isLightColor(hex: string): boolean {
+  const n = parseInt(hex.slice(1), 16);
+  const luminance = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return luminance > 160;
+}
+
 // Duration/curve for animating a node's scale and opacity toward whatever
 // its target became after a hover change. A steep deceleration (most of the
 // change happens fast, up front) reads punchier than a plain ease-out.
@@ -697,21 +706,51 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             const isNeighbor = tier === 1 && hoveredId !== null;
             const rgb = hexToRgb(colorForType((node as FGNode).type));
 
-            // Solid backing first so a dimmed node's own translucent fill
-            // doesn't let connection lines show through its body.
+            // Solid backing first so connection lines never show through a
+            // node's body (a dimmed ring is translucent).
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, 2 * Math.PI);
             ctx.fillStyle = backgroundColor;
             ctx.fill();
 
+            // The type color is an outline ring (the at-a-glance category
+            // signal); the object's icon sits centered inside it. The ring is
+            // stroked inward so the node's outer edge stays at `radius`.
+            const ringWidth = Math.max(0.8, radius * 0.22);
             ctx.beginPath();
-            ctx.arc(x, y, radius, 0, 2 * Math.PI);
-            ctx.fillStyle = `rgba(${rgb}, ${opacity})`;
-            ctx.fill();
+            ctx.arc(x, y, radius - ringWidth / 2, 0, 2 * Math.PI);
+            ctx.lineWidth = ringWidth;
+            ctx.strokeStyle = `rgba(${rgb}, ${opacity})`;
+            ctx.stroke();
             if (isCenter) {
-              ctx.lineWidth = 1;
+              // Marks the object being viewed: a thin gray ring just outside.
+              ctx.beginPath();
+              ctx.arc(x, y, radius + 1.5, 0, 2 * Math.PI);
+              ctx.lineWidth = 0.6;
               ctx.strokeStyle = `rgba(128, 128, 128, ${opacity})`;
               ctx.stroke();
+            }
+
+            const icon = (node as FGNode).icon;
+            if (icon) {
+              ctx.save();
+              ctx.globalAlpha = opacity;
+              // Emoji ignore fillStyle, but the plain-text fallback glyph
+              // doesn't: contrast it with the page background.
+              ctx.fillStyle = isLightColor(backgroundColor) ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.9)";
+              // "middle" baseline positions color emoji by font metrics,
+              // which sits them visibly off-center. Measure the glyph's
+              // real bounding box and center that on the node instead.
+              ctx.font = `${radius * 1.05}px ${EMOJI_FONT}`;
+              ctx.textAlign = "left";
+              ctx.textBaseline = "alphabetic";
+              const m = ctx.measureText(icon);
+              ctx.fillText(
+                icon,
+                x - (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2,
+                y + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2
+              );
+              ctx.restore();
             }
 
             if (isHovered || isNeighbor) {

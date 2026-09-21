@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { signOut } from "@/app/login/actions";
 
-export default function TavernsLayout({ children }: { children: React.ReactNode }) {
+export default function BusinessesLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
       <header className="border-b border-black/10 dark:border-white/10">

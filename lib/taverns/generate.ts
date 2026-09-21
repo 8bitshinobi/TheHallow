@@ -56,6 +56,8 @@ export type TavernCard = {
   /** True when this is a real, public tavern from the archive. */
   established: boolean;
   id?: string;
+  /** Manual icon override from the stored tavern, if it has one. */
+  icon?: string;
   name: string;
   description: string;
   innkeeper: string;
@@ -83,23 +85,23 @@ export type GenContext = {
 
 export type RerollField = "name" | "innkeeper" | "menu" | "patrons" | "rumor" | "signature";
 
-function pick<T>(list: readonly T[]): T {
+export function pick<T>(list: readonly T[]): T {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-function themeWords(region: Region | null): string[] {
+export function themeWords(region: Region | null): string[] {
   return (region?.theme ?? "")
     .split(",")
     .map((word) => word.trim())
     .filter(Boolean);
 }
 
-function randomInt(min: number, max: number): number {
+export function randomInt(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
 /** Random items without repeats; returns fewer if the list is too short. */
-function sample<T>(list: readonly T[], count: number): T[] {
+export function sample<T>(list: readonly T[], count: number): T[] {
   const copy = [...list];
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -176,8 +178,8 @@ function maybeSignature(region: Region | null): Signature | Record<string, never
   return Math.random() < SIGNATURE_CHANCE ? generateSignature(region) : {};
 }
 
-function generateRumors(hooks: string[]): Rumor[] {
-  const total = randomInt(3, 5);
+export function generateRumors(hooks: string[], min = 3, max = 5): Rumor[] {
+  const total = randomInt(min, max);
   const usingPlaceholders = hooks.length === 0;
   const hookPool = usingPlaceholders ? PLACEHOLDER_LORE_HOOKS : hooks;
 

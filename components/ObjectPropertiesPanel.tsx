@@ -3,12 +3,18 @@
 import { useState, useTransition } from "react";
 import { updateObject } from "@/app/objects/actions";
 import { PropertiesEditor } from "@/components/PropertiesEditor";
+import { iconFor } from "@/lib/icons";
 import { rethrowIfRedirectError } from "@/lib/utils";
 import type { HallowObject } from "@/lib/types";
 
 export function ObjectPropertiesPanel({ object }: { object: HallowObject }) {
   const [name, setName] = useState(object.name);
-  const [properties, setProperties] = useState(object.properties);
+  // The icon has its own input below, so it is kept out of the generic
+  // properties editor (which would otherwise overwrite it) and merged back
+  // on save.
+  const { icon: initialIcon = "", ...otherProperties } = object.properties;
+  const [icon, setIcon] = useState(initialIcon);
+  const [properties, setProperties] = useState(otherProperties);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -20,6 +26,8 @@ export function ObjectPropertiesPanel({ object }: { object: HallowObject }) {
     const cleanedProperties = Object.fromEntries(
       Object.entries(properties).filter(([key]) => key.trim() !== "")
     );
+
+    if (icon.trim()) cleanedProperties.icon = icon.trim();
 
     startTransition(async () => {
       try {
@@ -50,6 +58,25 @@ export function ObjectPropertiesPanel({ object }: { object: HallowObject }) {
           onChange={(e) => setName(e.target.value)}
           className="w-full rounded border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
         />
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="icon" className="text-sm font-medium">
+          Icon
+        </label>
+        <div className="flex items-center gap-3">
+          <input
+            id="icon"
+            value={icon}
+            onChange={(e) => setIcon(e.target.value)}
+            maxLength={16}
+            placeholder={iconFor(object.type, { ...properties })}
+            className="w-20 rounded border border-black/15 px-3 py-2 text-center text-sm dark:border-white/15 dark:bg-transparent"
+          />
+          <span className="text-xs text-black/50 dark:text-white/50">
+            Optional emoji that overrides the automatic one. Leave blank to use the default.
+          </span>
+        </div>
       </div>
 
       <div className="space-y-1">

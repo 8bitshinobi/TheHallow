@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { iconFor } from "@/lib/icons";
 import type { ConnectedObject, Graph, GraphNode, HallowObject } from "@/lib/types";
 
 export async function listObjects(typeFilter?: string): Promise<HallowObject[]> {
@@ -51,6 +52,7 @@ function toGraphObject(row: {
     type: row.type,
     name: row.name,
     graphLabel: explicit || fallbackGraphLabel(row.name),
+    icon: iconFor(row.type, row.properties),
   };
 }
 
