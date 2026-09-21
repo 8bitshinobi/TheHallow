@@ -30,8 +30,12 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const isLoginPage = request.nextUrl.pathname.startsWith("/login");
+  // /api/places handles its own auth: GET is public (RLS limits it to public
+  // taverns), POST returns 401 itself. Redirecting to /login would give API
+  // clients an HTML page instead of JSON.
+  const isPlacesApi = request.nextUrl.pathname === "/api/places";
 
-  if (!user && !isLoginPage) {
+  if (!user && !isLoginPage && !isPlacesApi) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

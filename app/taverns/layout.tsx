@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { signOut } from "@/app/login/actions";
 
-export default function ObjectsLayout({ children }: { children: React.ReactNode }) {
+export default function TavernsLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
       <header className="border-b border-black/10 dark:border-white/10">
@@ -10,11 +10,8 @@ export default function ObjectsLayout({ children }: { children: React.ReactNode 
             The Hallow Archive
           </Link>
           <div className="flex items-center gap-4">
-            <Link href="/taverns" className="text-sm text-black/60 underline dark:text-white/60">
-              Taverns
-            </Link>
-            <Link href="/objects/graph" className="text-sm text-black/60 underline dark:text-white/60">
-              Graph
+            <Link href="/objects" className="text-sm text-black/60 underline dark:text-white/60">
+              Objects
             </Link>
             <form action={signOut}>
               <button
