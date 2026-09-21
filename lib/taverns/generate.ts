@@ -16,6 +16,7 @@ import {
   NAME_SECOND,
   PATRONS,
   PLACEHOLDER_LORE_HOOKS,
+  TAVERN_ROLES,
   SIGNATURE_ADJECTIVES,
   SIGNATURE_DRINK_BASES,
   SIGNATURE_DRINK_EFFECTS,
@@ -23,6 +24,21 @@ import {
   SIGNATURE_FOOD_EFFECTS,
   type Crowd,
 } from "./tables";
+import {
+  AREA_ADJECTIVES,
+  generateEmployees,
+  pick,
+  pricedSample,
+  randomInt,
+  resolveArea,
+  sample,
+  formatPrice,
+  type Area,
+  type AreaChoice,
+} from "@/lib/generatorShared";
+
+// Re-exported so existing imports (the business generator) keep working.
+export { pick, randomInt, sample };
 
 export type CrowdChoice = Crowd | "Any";
 export type RumorKind = "gossip" | "lore" | "lore-placeholder";
@@ -62,6 +78,10 @@ export type TavernCard = {
   description: string;
   innkeeper: string;
   innkeeperQuirk: string;
+  /** How well-off the part of the settlement is; drives prices, staff and tone. */
+  area?: Area;
+  employees: string[];
+  /** Lines like "dark barley stout — 4 cp". */
   drinks: string[];
   food: string[];
   patrons: string[];
@@ -79,15 +99,19 @@ export type TavernCard = {
 export type GenContext = {
   region: Region | null;
   crowd: CrowdChoice;
+  area: AreaChoice;
   /** Names of public lore records; empty falls back to placeholder hooks. */
   hooks: string[];
 };
 
-export type RerollField = "name" | "innkeeper" | "menu" | "patrons" | "rumor" | "signature";
-
-export function pick<T>(list: readonly T[]): T {
-  return list[Math.floor(Math.random() * list.length)];
-}
+export type RerollField =
+  | "name"
+  | "innkeeper"
+  | "menu"
+  | "patrons"
+  | "rumor"
+  | "signature"
+  | "employees";
 
 export function themeWords(region: Region | null): string[] {
   return (region?.theme ?? "")
@@ -96,26 +120,12 @@ export function themeWords(region: Region | null): string[] {
     .filter(Boolean);
 }
 
-export function randomInt(min: number, max: number): number {
-  return min + Math.floor(Math.random() * (max - min + 1));
+function generateDrinks(area: Area): string[] {
+  return pricedSample(DRINKS, randomInt(3, 5), area);
 }
 
-/** Random items without repeats; returns fewer if the list is too short. */
-export function sample<T>(list: readonly T[], count: number): T[] {
-  const copy = [...list];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy.slice(0, count);
-}
-
-function generateDrinks(): string[] {
-  return sample(DRINKS, randomInt(3, 5));
-}
-
-function generateFood(): string[] {
-  return sample(FOODS, randomInt(5, 7));
+function generateFood(area: Area): string[] {
+  return pricedSample(FOODS, randomInt(5, 7), area);
 }
 
 function generatePatrons(choice: CrowdChoice): string[] {
@@ -138,8 +148,8 @@ function generateName(): string {
     });
 }
 
-function generateDescription(region: Region | null): string {
-  const adjective = pick(DESCRIPTION_ADJECTIVES);
+function generateDescription(region: Region | null, area: Area): string {
+  const adjective = pick([...DESCRIPTION_ADJECTIVES, ...AREA_ADJECTIVES[area]]);
   const kind = pick(KINDS);
   const article = /^[aeiou]/i.test(adjective) ? "An" : "A";
   const words = themeWords(region);
@@ -158,7 +168,7 @@ function generateInnkeeper(): { innkeeper: string; innkeeperQuirk: string } {
 
 type Signature = { signature: string; signatureKind?: "drink" | "food" };
 
-function generateSignature(region: Region | null): Signature {
+function generateSignature(region: Region | null, area: Area): Signature {
   // Region-authored specialties are the real location link; use them if any exist.
   if (region && region.specialties.length > 0) {
     return { signature: pick(region.specialties) };
@@ -169,13 +179,14 @@ function generateSignature(region: Region | null): Signature {
   const words = themeWords(region);
   const hint = words.length ? ` (think: ${pick(words)})` : "";
   return {
-    signature: `${pick(SIGNATURE_ADJECTIVES)} ${base}${hint}: ${effect}.`,
+    // House specialties cost a premium over ordinary fare (base 8-20 cp).
+    signature: `${pick(SIGNATURE_ADJECTIVES)} ${base}${hint}: ${effect}. (${formatPrice(randomInt(8, 20), area)})`,
     signatureKind: kind,
   };
 }
 
-function maybeSignature(region: Region | null): Signature | Record<string, never> {
-  return Math.random() < SIGNATURE_CHANCE ? generateSignature(region) : {};
+function maybeSignature(region: Region | null, area: Area): Signature | Record<string, never> {
+  return Math.random() < SIGNATURE_CHANCE ? generateSignature(region, area) : {};
 }
 
 export function generateRumors(hooks: string[], min = 3, max = 5): Rumor[] {
@@ -204,16 +215,19 @@ export function generateRumors(hooks: string[], min = 3, max = 5): Rumor[] {
 }
 
 export function generateTavern(context: GenContext): TavernCard {
+  const area = resolveArea(context.area);
   return {
     established: false,
     name: generateName(),
-    description: generateDescription(context.region),
+    description: generateDescription(context.region, area),
     ...generateInnkeeper(),
-    drinks: generateDrinks(),
-    food: generateFood(),
+    area,
+    employees: generateEmployees(TAVERN_ROLES, area, "tavern"),
+    drinks: generateDrinks(area),
+    food: generateFood(area),
     patrons: generatePatrons(context.crowd),
     rumors: generateRumors(context.hooks),
-    ...maybeSignature(context.region),
+    ...maybeSignature(context.region, area),
     location: context.region?.name ?? "",
     locationId: context.region?.id,
     crowd: context.crowd,
@@ -221,19 +235,23 @@ export function generateTavern(context: GenContext): TavernCard {
 }
 
 export function rerollField(card: TavernCard, field: RerollField, context: GenContext): TavernCard {
+  // A card keeps its own area when rerolling; only a brand-new generation re-reads the filter.
+  const area = card.area ?? resolveArea(context.area);
   switch (field) {
     case "name":
       return { ...card, name: generateName() };
     case "innkeeper":
       return { ...card, ...generateInnkeeper() };
     case "menu":
-      return { ...card, drinks: generateDrinks(), food: generateFood() };
+      return { ...card, drinks: generateDrinks(area), food: generateFood(area) };
     case "patrons":
       return { ...card, crowd: context.crowd, patrons: generatePatrons(context.crowd) };
     case "rumor":
       return { ...card, rumors: generateRumors(context.hooks) };
     case "signature":
       // Explicit request: always produces one, unlike first generation.
-      return { ...card, signatureKind: undefined, ...generateSignature(context.region) };
+      return { ...card, signatureKind: undefined, ...generateSignature(context.region, area) };
+    case "employees":
+      return { ...card, employees: generateEmployees(TAVERN_ROLES, area, "tavern") };
   }
 }

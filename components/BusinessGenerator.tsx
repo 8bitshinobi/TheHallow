@@ -12,6 +12,7 @@ import {
   type BusinessRerollField,
 } from "@/lib/businesses/generate";
 import { CATEGORY_NAMES } from "@/lib/businesses/tables";
+import { AREAS, isArea, type AreaChoice } from "@/lib/generatorShared";
 import { iconFor } from "@/lib/icons";
 import { toLines, type Region } from "@/lib/taverns/generate";
 
@@ -32,6 +33,8 @@ type ApiBusiness = {
   proprietor: string;
   proprietor_quirk: string;
   icon: string;
+  area: string;
+  employees: string[];
   goods: string[];
   patrons: string[];
   rumors: string[];
@@ -48,6 +51,8 @@ function fromApi(business: ApiBusiness, regions: Region[]): BusinessCard {
     description: business.description,
     proprietor: business.proprietor,
     proprietorQuirk: business.proprietor_quirk,
+    area: isArea(business.area) ? business.area : undefined,
+    employees: business.employees,
     goods: business.goods,
     patrons: business.patrons,
     rumors: business.rumors.map((text) => ({ text })),
@@ -64,6 +69,7 @@ const buttonClass =
 export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks: string[] }) {
   const [regionId, setRegionId] = useState("");
   const [category, setCategory] = useState("Any");
+  const [area, setArea] = useState<AreaChoice>("Any");
   const [card, setCard] = useState<BusinessCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [save, setSave] = useState<SaveState>({ status: "idle" });
@@ -71,6 +77,7 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
   const context: BusinessContext = {
     region: regions.find((region) => region.id === regionId) ?? null,
     category,
+    area,
     hooks,
   };
 
@@ -82,6 +89,7 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
         const params = new URLSearchParams();
         if (context.region) params.set("location", context.region.name);
         if (category !== "Any") params.set("category", category);
+        if (area !== "Any") params.set("area", area);
         const response = await fetch(`/api/businesses?${params}`);
         if (response.ok) {
           const { businesses } = (await response.json()) as { businesses: ApiBusiness[] };
@@ -117,6 +125,8 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
           description: card.description,
           proprietor: card.proprietor,
           proprietor_quirk: card.proprietorQuirk,
+          area: card.area,
+          employees: toLines(card.employees),
           goods: toLines(card.goods),
           patrons: toLines(card.patrons),
           rumors: toLines(card.rumors.map((rumor) => rumor.text)),
@@ -168,6 +178,20 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
             ))}
           </select>
         </label>
+        <label className="space-y-1 text-xs text-black/60 dark:text-white/60">
+          <span className="block">Area</span>
+          <select
+            value={area}
+            onChange={(event) => setArea(event.target.value as AreaChoice)}
+            className={selectClass}
+          >
+            {["Any", ...AREAS].map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           onClick={generate}
@@ -213,8 +237,7 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
           </header>
 
           <p className="text-xs text-black/50 dark:text-white/50">
-            {card.category}
-            {card.location ? ` · ${card.location}` : ""}
+            {[card.category, card.location, card.area].filter(Boolean).join(" · ")}
           </p>
           <p className="text-sm">{card.description}</p>
 
@@ -227,6 +250,18 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
               <span className="block text-black/60 dark:text-white/60">{card.proprietorQuirk}</span>
             )}
           </Field>
+          {(card.employees.length > 0 || !card.established) && (
+            <Field
+              label={`Staff (${card.employees.length})`}
+              onReroll={card.established ? undefined : () => reroll("employees")}
+            >
+              {card.employees.length > 0 ? (
+                <List items={card.employees} />
+              ) : (
+                <span className="text-black/60 dark:text-white/60">Just the proprietor.</span>
+              )}
+            </Field>
+          )}
           <Field
             label="Goods & services"
             onReroll={card.established ? undefined : () => reroll("goods")}

@@ -7,7 +7,7 @@ const handlers = createObjectHandlers({
   type: "tavern",
   responseKey: "taverns",
   source: "Tavern generator",
-  filters: ["location"],
+  filters: ["location", "area"],
   textFields: [
     "description",
     "innkeeper",
@@ -15,11 +15,13 @@ const handlers = createObjectHandlers({
     "signature",
     "signature_kind",
     "icon",
+    "area",
     "location",
   ],
   // Second name is the older single-value property, so taverns saved before
   // lists existed still read correctly.
   listFields: [
+    ["employees"],
     ["drinks", "drink"],
     ["food", "food"],
     ["patrons", "patrons"],
@@ -31,6 +33,8 @@ const handlers = createObjectHandlers({
     "innkeeper_quirk",
     "signature",
     "signature_kind",
+    "area",
+    "employees",
     "drinks",
     "food",
     "patrons",

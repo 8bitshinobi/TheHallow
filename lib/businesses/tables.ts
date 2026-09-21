@@ -20,7 +20,9 @@ export type BusinessCategory = {
   shop: string;
   /** Words used in generated names: "Crooked {noun}", "Harrow's {noun}". */
   nouns: string[];
-  goods: string[];
+  /** [name, base price in cp at a middle-class shop] */
+  goods: [string, number][];
+  roles: string[];
   /** Extra patrons specific to this trade, mixed into the generic pool. */
   patrons: string[];
   /** A hidden illicit activity this business may be a front for. */
@@ -34,9 +36,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "smithy",
     nouns: ["Forge", "Smithy", "Anvil", "Ironworks"],
     goods: [
-      "horseshoes", "nails and hinges", "kitchen knives", "plowshares", "sword repair",
-      "armor mending", "iron tools", "custom ironwork",
+      ["horseshoes", 4],
+      ["nails and hinges", 2],
+      ["kitchen knives", 10],
+      ["plowshares", 40],
+      ["sword repair", 25],
+      ["armor mending", 30],
+      ["iron tools", 15],
+      ["custom ironwork", 60],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["apprentice smith", "journeyman smith", "bellows-boy", "farrier", "delivery runner"],
     patrons: ["A soot-streaked apprentice on an errand", "A soldier waiting on a repair", "A farmer with a cracked plowshare"],
   },
   {
@@ -45,9 +55,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "stable",
     nouns: ["Stables", "Livery", "Paddock", "Mews"],
     goods: [
-      "horses for hire", "mules and pack animals", "saddles and tack", "stabling by the night",
-      "farrier services", "feed and hay", "cart rental", "riding lessons",
+      ["horses for hire (per day)", 20],
+      ["mules and pack animals (per day)", 10],
+      ["saddles and tack", 150],
+      ["stabling by the night", 5],
+      ["farrier services", 8],
+      ["feed and hay (per day)", 3],
+      ["cart rental (per day)", 15],
+      ["riding lessons", 12],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["stable-hand", "groom", "farrier", "tack-maker", "night watch"],
     patrons: ["A courier changing horses in a hurry", "A merchant haggling over a mule", "A stable-boy asleep in the hay"],
   },
   {
@@ -56,9 +74,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "apothecary",
     nouns: ["Apothecary", "Dispensary", "Mortar & Pestle", "Herbary"],
     goods: [
-      "herbal tinctures", "poultices and salves", "sleeping draughts", "dried herbs",
-      "fever remedies", "bitters", "bandages and splints", "cough syrups",
+      ["herbal tinctures", 12],
+      ["poultices and salves", 8],
+      ["sleeping draughts", 20],
+      ["dried herbs", 3],
+      ["fever remedies", 15],
+      ["bitters", 6],
+      ["bandages and splints", 4],
+      ["cough syrups", 7],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["herbalist", "apprentice", "dispenser", "herb-gatherer", "bookkeeper"],
     patrons: ["A worried parent with a feverish child", "A traveler after a remedy for road sickness", "A hooded customer who lingers too long"],
     front: {
       label: "Poisons",
@@ -76,9 +102,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "jeweler's shop",
     nouns: ["Jewelers", "Gems", "Settings", "Goldsmith"],
     goods: [
-      "silver chains", "signet rings", "cut gemstones", "engraving", "appraisals",
-      "mourning jewelry", "lockets", "brooches",
+      ["silver chains", 120],
+      ["signet rings", 200],
+      ["cut gemstones", 500],
+      ["engraving", 15],
+      ["appraisals", 20],
+      ["mourning jewelry", 90],
+      ["lockets", 80],
+      ["brooches", 60],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["goldsmith", "gem-cutter", "apprentice", "clerk", "guard"],
     patrons: ["A nervous suitor choosing a ring", "A widow selling an heirloom", "A merchant having a stone appraised"],
   },
   {
@@ -87,9 +121,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "general store",
     nouns: ["General Store", "Trading Post", "Emporium", "Mercantile"],
     goods: [
-      "rope and twine", "lamp oil", "candles", "sacks and barrels",
-      "blankets", "cookware", "traveler's rations", "tools and hardware",
+      ["rope and twine", 3],
+      ["lamp oil", 4],
+      ["candles", 1],
+      ["sacks and barrels", 6],
+      ["blankets", 20],
+      ["cookware", 25],
+      ["traveler's rations", 5],
+      ["tools and hardware", 15],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["clerk", "stockhand", "delivery runner", "bookkeeper", "sweeper"],
     patrons: ["A farmer stocking up before the weather turns", "A traveler buying supplies for the road", "A child sent for a single candle"],
   },
   {
@@ -98,9 +140,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "tailor's shop",
     nouns: ["Tailors", "Threadworks", "Needle & Thread", "Haberdashery"],
     goods: [
-      "mended coats", "dyed cloaks", "uniforms", "wedding clothes",
-      "hats and gloves", "alterations", "embroidered banners", "travel clothing",
+      ["mended coats", 12],
+      ["dyed cloaks", 45],
+      ["uniforms", 80],
+      ["wedding clothes", 300],
+      ["hats and gloves", 20],
+      ["alterations", 6],
+      ["embroidered banners", 100],
+      ["travel clothing", 60],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["seamstress", "apprentice", "cutter", "embroiderer", "errand-runner"],
     patrons: ["A bride's mother with strong opinions", "A soldier needing a uniform let out", "A merchant who wants to look wealthier than they are"],
   },
   {
@@ -109,9 +159,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "bakery",
     nouns: ["Bakery", "Oven", "Bread & Butter", "Hearth Loaf"],
     goods: [
-      "crusty loaves", "honey buns", "meat pies", "seed cakes",
-      "festival pastries", "hardtack", "cheese rolls", "sweet rolls",
+      ["crusty loaves", 1],
+      ["honey buns", 1],
+      ["meat pies", 3],
+      ["seed cakes", 2],
+      ["festival pastries", 4],
+      ["hardtack", 1],
+      ["cheese rolls", 2],
+      ["sweet rolls", 1],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["baker", "dough-mixer", "oven-tender", "shop-girl", "delivery runner"],
     patrons: ["An early riser queuing before dawn", "A cook buying bread for a hundred", "A child clutching a coin for a bun"],
   },
   {
@@ -120,9 +178,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "bookshop",
     nouns: ["Books", "Bindery", "Quill & Folio", "Scriptorium"],
     goods: [
-      "used volumes", "maps", "almanacs", "quills and ink",
-      "blank journals", "letters written for hire", "pamphlets", "rare manuscripts",
+      ["used volumes", 40],
+      ["maps", 60],
+      ["almanacs", 10],
+      ["quills and ink", 5],
+      ["blank journals", 25],
+      ["letters written for hire", 8],
+      ["pamphlets", 2],
+      ["rare manuscripts", 800],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["clerk", "binder", "scribe", "apprentice", "cataloguer"],
     patrons: ["A scholar hunting one specific volume", "A clerk buying ink by the crate", "A traveler asking for the local map"],
   },
   {
@@ -131,9 +197,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "wine and spirits shop",
     nouns: ["Cellar", "Vintners", "Still", "Cask & Cork"],
     goods: [
-      "local wines", "distilled spirits", "casks by the barrel", "tasting flights",
-      "bottled cordials", "imported vintages", "brandy", "corks and bottles",
+      ["local wines (bottle)", 15],
+      ["distilled spirits (bottle)", 30],
+      ["casks by the barrel", 300],
+      ["tasting flights", 10],
+      ["bottled cordials", 20],
+      ["imported vintages (bottle)", 80],
+      ["brandy (bottle)", 40],
+      ["corks and bottles", 2],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["cellar-master", "clerk", "cooper", "taster", "delivery runner"],
     patrons: ["A tavern-keeper restocking by the cask", "A collector arguing over a vintage", "A quiet regular who's never bought a full bottle"],
   },
   {
@@ -142,9 +216,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "pawnshop",
     nouns: ["Pawn", "Exchange", "Loan & Keep", "Second Hand"],
     goods: [
-      "secondhand tools", "unclaimed heirlooms", "loans against valuables", "used weapons",
-      "odd jewelry", "cutlery", "musical instruments", "worn clothing",
+      ["secondhand tools", 8],
+      ["unclaimed heirlooms", 100],
+      ["loans against valuables (fee)", 10],
+      ["used weapons", 40],
+      ["odd jewelry", 50],
+      ["cutlery", 6],
+      ["musical instruments", 70],
+      ["worn clothing", 5],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["clerk", "appraiser", "guard", "runner", "bookkeeper"],
     patrons: ["A down-on-their-luck customer pledging a keepsake", "A bargain hunter picking through boxes", "A well-dressed stranger who asks no prices"],
     front: {
       label: "Fence",
@@ -162,9 +244,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "curio shop",
     nouns: ["Curios", "Oddities", "Cabinet of Wonders", "Trinkets"],
     goods: [
-      "strange trinkets", "preserved specimens", "\"genuine\" relics", "small idols",
-      "glass eyes", "dried oddities", "forged maps", "antique keys",
+      ["strange trinkets", 15],
+      ["preserved specimens", 80],
+      ["\"genuine\" relics", 200],
+      ["small idols", 40],
+      ["glass eyes", 25],
+      ["dried oddities", 10],
+      ["forged maps", 30],
+      ["antique keys", 12],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["shopkeeper's assistant", "appraiser", "packer", "guard", "runner"],
     patrons: ["A tourist convinced everything is authentic", "A collector who knows exactly what they want", "A child pressing their nose to the display glass"],
     front: {
       label: "Smuggling",
@@ -182,9 +272,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "import warehouse",
     nouns: ["Imports", "Warehouse", "Trading Company", "Freight"],
     goods: [
-      "crates of foreign goods", "bulk spices", "bolts of cloth", "barrels of oil",
-      "tea chests", "cured meats", "storage by the week", "wholesale orders",
+      ["crates of foreign goods", 500],
+      ["bulk spices (per lb)", 20],
+      ["bolts of cloth", 80],
+      ["barrels of oil", 60],
+      ["tea chests", 150],
+      ["cured meats (per side)", 40],
+      ["storage by the week", 30],
+      ["wholesale orders (deposit)", 100],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["warehouse clerk", "dock hand", "porter", "tally-keeper", "guard"],
     patrons: ["A buyer with a long shopping list", "A dockhand hauling crates", "A clerk checking manifests twice"],
     front: {
       label: "Contraband",
@@ -202,9 +300,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "tea house",
     nouns: ["Tea House", "Kettle & Cup", "Steep", "Leaf & Lantern"],
     goods: [
-      "pots of tea", "sweet biscuits", "quiet corners", "rare leaves by weight",
-      "private booths", "herbal blends", "small cakes", "afternoon service",
+      ["pots of tea", 3],
+      ["sweet biscuits", 1],
+      ["quiet corner (per hour)", 2],
+      ["rare leaves (per oz)", 25],
+      ["private booth (per hour)", 10],
+      ["herbal blends", 6],
+      ["small cakes", 2],
+      ["afternoon service", 12],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["tea master", "server", "kitchen hand", "hostess", "doorman"],
     patrons: ["Two friends deep in conversation", "A businessperson holding a quiet meeting", "A regular who never orders the same tea twice"],
     front: {
       label: "Poisons",
@@ -222,9 +328,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "counting house",
     nouns: ["Counting House", "Lender", "Coin & Ledger", "Exchange"],
     goods: [
-      "short loans", "coin changing", "letters of credit", "safekeeping in a strongbox",
-      "appraisals", "ledger services", "mortgages", "currency exchange",
+      ["short loans (fee)", 20],
+      ["coin changing (fee)", 2],
+      ["letters of credit (fee)", 30],
+      ["safekeeping in a strongbox (per month)", 15],
+      ["appraisals", 20],
+      ["ledger services", 25],
+      ["mortgages (fee)", 100],
+      ["currency exchange (fee)", 3],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["clerk", "bookkeeper", "guard", "collector", "runner"],
     patrons: ["A merchant renewing a loan they can't afford", "A traveler exchanging foreign coin", "A nervous customer avoiding eye contact"],
     front: {
       label: "Loan-sharking",
@@ -242,9 +356,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "funeral parlor",
     nouns: ["Undertaker", "Funeral Parlor", "Rest", "Bier & Sons"],
     goods: [
-      "coffins", "burial arrangements", "shrouds", "mourning clothes",
-      "wake catering", "headstones", "grave-tending", "embalming",
+      ["coffins", 100],
+      ["burial arrangements", 60],
+      ["shrouds", 20],
+      ["mourning clothes", 50],
+      ["wake catering", 80],
+      ["headstones", 150],
+      ["grave-tending (per year)", 25],
+      ["embalming", 90],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["gravedigger", "carpenter", "mourner-for-hire", "assistant", "driver"],
     patrons: ["A grieving family making arrangements", "A gravedigger collecting wages", "A cleric confirming the schedule"],
     front: {
       label: "Body-snatching",
@@ -262,9 +384,17 @@ export const CATEGORIES: BusinessCategory[] = [
     shop: "bathhouse",
     nouns: ["Baths", "Bathhouse", "Steam & Soak", "Waters"],
     goods: [
-      "hot baths", "steam rooms", "massages", "scented soaps",
-      "barbering", "fresh towels", "private rooms", "herbal soaks",
+      ["hot baths", 5],
+      ["steam rooms", 4],
+      ["massages", 15],
+      ["scented soaps", 3],
+      ["barbering", 4],
+      ["fresh towels", 1],
+      ["private rooms", 25],
+      ["herbal soaks", 8],
     ],
+    /** Staff roles for this trade; a few are picked per business. */
+    roles: ["attendant", "masseur", "barber", "laundress", "doorman"],
     patrons: ["A traveler washing off the road", "Two officials talking low in the steam", "A regular who always books the same room"],
     front: {
       label: "Information broker",
@@ -279,6 +409,9 @@ export const CATEGORIES: BusinessCategory[] = [
 ];
 
 export const CATEGORY_NAMES = CATEGORIES.map((category) => category.name);
+
+/** Roles any business might employ, mixed in with the trade-specific ones. */
+export const GENERIC_ROLES = ["clerk", "delivery runner", "night watch", "bookkeeper", "sweeper", "apprentice"];
 
 export const NAME_ADJECTIVES = [
   "Crooked", "Gilded", "Golden", "Old", "Silver", "Lucky", "Honest", "Blue",

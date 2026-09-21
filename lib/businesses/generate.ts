@@ -1,3 +1,11 @@
+import {
+  AREA_ADJECTIVES,
+  generateEmployees,
+  pricedSample,
+  resolveArea,
+  type Area,
+  type AreaChoice,
+} from "@/lib/generatorShared";
 import { INNKEEPER_FIRST, INNKEEPER_LAST } from "@/lib/taverns/tables";
 import {
   generateRumors,
@@ -15,6 +23,7 @@ import {
   DESCRIPTION_TAILS,
   DESCRIPTION_THEMED_TAILS,
   GENERIC_PATRONS,
+  GENERIC_ROLES,
   NAME_ADJECTIVES,
   NAME_PATTERNS,
   PROPRIETOR_QUIRKS,
@@ -30,8 +39,12 @@ export type BusinessCard = {
   name: string;
   category: string;
   description: string;
+  /** How well-off the part of the settlement is; drives prices, staff and tone. */
+  area?: Area;
+  employees: string[];
   proprietor: string;
   proprietorQuirk: string;
+  /** Lines like "horseshoes — 4 cp". */
   goods: string[];
   patrons: string[];
   rumors: Rumor[];
@@ -44,9 +57,17 @@ export type BusinessCard = {
 export type BusinessContext = Pick<GenContext, "region" | "hooks"> & {
   /** Category name, or "Any". */
   category: string;
+  area: AreaChoice;
 };
 
-export type BusinessRerollField = "name" | "proprietor" | "goods" | "patrons" | "rumor" | "front";
+export type BusinessRerollField =
+  | "name"
+  | "proprietor"
+  | "goods"
+  | "patrons"
+  | "rumor"
+  | "front"
+  | "employees";
 
 function categoryByName(name: string): BusinessCategory {
   return CATEGORIES.find((category) => category.name === name) ?? pick(CATEGORIES);
@@ -63,8 +84,8 @@ function generateName(category: BusinessCategory): string {
     .replace("{noun}", pick(category.nouns));
 }
 
-function generateDescription(category: BusinessCategory, region: Region | null): string {
-  const adjective = pick(DESCRIPTION_ADJECTIVES);
+function generateDescription(category: BusinessCategory, region: Region | null, area: Area): string {
+  const adjective = pick([...DESCRIPTION_ADJECTIVES, ...AREA_ADJECTIVES[area]]);
   const article = /^[aeiou]/i.test(adjective) ? "An" : "A";
   const words = themeWords(region);
   const tail = words.length
@@ -80,8 +101,12 @@ function generateProprietor(): { proprietor: string; proprietorQuirk: string } {
   };
 }
 
-function generateGoods(category: BusinessCategory): string[] {
-  return sample(category.goods, randomInt(4, 8));
+function generateGoods(category: BusinessCategory, area: Area): string[] {
+  return pricedSample(category.goods, randomInt(4, 8), area);
+}
+
+function generateStaff(category: BusinessCategory, area: Area): string[] {
+  return generateEmployees([...new Set([...category.roles, ...GENERIC_ROLES])], area, "business");
 }
 
 function generatePatrons(category: BusinessCategory): string[] {
@@ -97,13 +122,16 @@ function generateFront(category: BusinessCategory, force: boolean): string | und
 
 export function generateBusiness(context: BusinessContext): BusinessCard {
   const category = context.category === "Any" ? pick(CATEGORIES) : categoryByName(context.category);
+  const area = resolveArea(context.area);
   return {
     established: false,
     name: generateName(category),
     category: category.name,
-    description: generateDescription(category, context.region),
+    description: generateDescription(category, context.region, area),
     ...generateProprietor(),
-    goods: generateGoods(category),
+    area,
+    employees: generateStaff(category, area),
+    goods: generateGoods(category, area),
     patrons: generatePatrons(category),
     rumors: generateRumors(context.hooks, 2, 4),
     front: generateFront(category, false),
@@ -118,13 +146,17 @@ export function rerollBusinessField(
   context: BusinessContext
 ): BusinessCard {
   const category = categoryByName(card.category);
+  // A card keeps its own area when rerolling; only a brand-new generation re-reads the filter.
+  const area = card.area ?? resolveArea(context.area);
   switch (field) {
     case "name":
       return { ...card, name: generateName(category) };
     case "proprietor":
       return { ...card, ...generateProprietor() };
     case "goods":
-      return { ...card, goods: generateGoods(category) };
+      return { ...card, goods: generateGoods(category, area) };
+    case "employees":
+      return { ...card, employees: generateStaff(category, area) };
     case "patrons":
       return { ...card, patrons: generatePatrons(category) };
     case "rumor":

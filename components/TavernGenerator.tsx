@@ -12,6 +12,7 @@ import {
   type RerollField,
   type TavernCard,
 } from "@/lib/taverns/generate";
+import { AREAS, isArea, type AreaChoice } from "@/lib/generatorShared";
 import { iconFor } from "@/lib/icons";
 import { Field, List } from "@/components/generatorParts";
 import { CROWDS } from "@/lib/taverns/tables";
@@ -36,6 +37,8 @@ type ApiTavern = {
   signature: string;
   signature_kind: string;
   icon: string;
+  area: string;
+  employees: string[];
   drinks: string[];
   food: string[];
   patrons: string[];
@@ -57,6 +60,8 @@ function fromApi(tavern: ApiTavern, regions: Region[]): TavernCard {
       tavern.signature_kind === "drink" || tavern.signature_kind === "food"
         ? tavern.signature_kind
         : undefined,
+    area: isArea(tavern.area) ? tavern.area : undefined,
+    employees: tavern.employees,
     drinks: tavern.drinks,
     food: tavern.food,
     patrons: tavern.patrons,
@@ -74,6 +79,7 @@ const buttonClass =
 export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: string[] }) {
   const [regionId, setRegionId] = useState("");
   const [crowd, setCrowd] = useState<CrowdChoice>("Any");
+  const [area, setArea] = useState<AreaChoice>("Any");
   const [card, setCard] = useState<TavernCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [save, setSave] = useState<SaveState>({ status: "idle" });
@@ -81,6 +87,7 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
   const context: GenContext = {
     region: regions.find((region) => region.id === regionId) ?? null,
     crowd,
+    area,
     hooks,
   };
 
@@ -89,8 +96,10 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
     setSave({ status: "idle" });
     try {
       if (Math.random() < ESTABLISHED_CHANCE) {
-        const params = context.region ? `?location=${encodeURIComponent(context.region.name)}` : "";
-        const response = await fetch(`/api/places${params}`);
+        const params = new URLSearchParams();
+        if (context.region) params.set("location", context.region.name);
+        if (area !== "Any") params.set("area", area);
+        const response = await fetch(`/api/places?${params}`);
         if (response.ok) {
           const { taverns } = (await response.json()) as { taverns: ApiTavern[] };
           if (taverns.length > 0) {
@@ -126,6 +135,8 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
           innkeeper_quirk: card.innkeeperQuirk,
           signature: card.signature,
           signature_kind: card.signatureKind,
+          area: card.area,
+          employees: toLines(card.employees),
           drinks: toLines(card.drinks),
           food: toLines(card.food),
           patrons: toLines(card.patrons),
@@ -178,6 +189,20 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
             ))}
           </select>
         </label>
+        <label className="space-y-1 text-xs text-black/60 dark:text-white/60">
+          <span className="block">Area</span>
+          <select
+            value={area}
+            onChange={(event) => setArea(event.target.value as AreaChoice)}
+            className={selectClass}
+          >
+            {["Any", ...AREAS].map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           onClick={generate}
@@ -220,8 +245,10 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
             )}
           </header>
 
-          {card.location && (
-            <p className="text-xs text-black/50 dark:text-white/50">{card.location}</p>
+          {(card.location || card.area) && (
+            <p className="text-xs text-black/50 dark:text-white/50">
+              {[card.location, card.area].filter(Boolean).join(" · ")}
+            </p>
           )}
           <p className="text-sm">{card.description}</p>
 
@@ -229,6 +256,18 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
             {card.innkeeper}
             {card.innkeeperQuirk && <span className="block text-black/60 dark:text-white/60">{card.innkeeperQuirk}</span>}
           </Field>
+          {(card.employees.length > 0 || !card.established) && (
+            <Field
+              label={`Staff (${card.employees.length})`}
+              onReroll={card.established ? undefined : () => reroll("employees")}
+            >
+              {card.employees.length > 0 ? (
+                <List items={card.employees} />
+              ) : (
+                <span className="text-black/60 dark:text-white/60">Just the innkeeper.</span>
+              )}
+            </Field>
+          )}
           {card.signature ? (
             <Field
               label={`House specialty${card.signatureKind ? ` (${card.signatureKind})` : ""}`}

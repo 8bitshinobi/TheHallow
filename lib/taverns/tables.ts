@@ -71,15 +71,32 @@ export const INNKEEPER_QUIRKS = [
   "Speaks to the cat as though it were a business partner.",
 ];
 
-export const DRINKS = [
-  "dark barley stout", "spiced cider", "honeyed mead", "pear brandy",
-  "thin house ale", "hot cider with cloves", "juniper spirit", "small beer",
+/** [name, base price in cp at a middle-class tavern] */
+export const DRINKS: [string, number][] = [
+  ["small beer", 1],
+  ["thin house ale", 2],
+  ["spiced cider", 3],
+  ["hot cider with cloves", 3],
+  ["dark barley stout", 4],
+  ["honeyed mead", 5],
+  ["juniper spirit", 6],
+  ["pear brandy", 8],
 ];
 
-export const FOODS = [
-  "mutton stew with bread", "smoked trout and boiled roots", "meat pie",
-  "barley porridge with onions", "roast fowl", "cheese and black bread",
-  "bean and bacon pot", "fried river fish",
+export const FOODS: [string, number][] = [
+  ["barley porridge with onions", 2],
+  ["bean and bacon pot", 3],
+  ["cheese and black bread", 3],
+  ["meat pie", 4],
+  ["fried river fish", 4],
+  ["mutton stew with bread", 5],
+  ["smoked trout and boiled roots", 6],
+  ["roast fowl", 8],
+];
+
+export const TAVERN_ROLES = [
+  "bartender", "cook", "serving hand", "bouncer", "stable-hand",
+  "cellar-keeper", "pot-boy", "chambermaid", "minstrel", "dishwasher",
 ];
 
 /**
