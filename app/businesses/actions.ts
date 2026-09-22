@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { loadEstablishedPool } from "@/lib/generatorPool";
+import { FRONT_CAPABLE_CATEGORY_NAMES } from "@/lib/businesses/tables";
 
 const BUSINESS_CONFIG = {
   type: "business",
@@ -22,13 +23,23 @@ const BUSINESS_CONFIG = {
   listFields: [["employees"], ["goods"], ["patrons"], ["rumors"]],
 } as const;
 
-/** The in-app "established" business pool: everything not marked visibility=private. */
+/**
+ * The in-app "established" business pool: everything not marked
+ * visibility=private. `frontsOnly` narrows this to businesses whose
+ * category can have a hidden front at all — not just ones that already
+ * have one saved, since fillEstablishedBusinessBlanks forces a front onto
+ * any front-capable result once frontsOnly is set.
+ */
 export async function getEstablishedBusinesses(filters: {
   location?: string;
   category?: string;
   area?: string;
+  frontsOnly?: boolean;
 }) {
-  return loadEstablishedPool(BUSINESS_CONFIG, filters);
+  const { frontsOnly, ...rest } = filters;
+  const results = await loadEstablishedPool(BUSINESS_CONFIG, rest);
+  if (!frontsOnly) return results;
+  return results.filter((item) => FRONT_CAPABLE_CATEGORY_NAMES.includes(item.category as string));
 }
 
 /**

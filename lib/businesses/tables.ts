@@ -410,6 +410,11 @@ export const CATEGORIES: BusinessCategory[] = [
 
 export const CATEGORY_NAMES = CATEGORIES.map((category) => category.name);
 
+/** Categories that can have a hidden front at all (drives the "Fronts only" filter). */
+export const FRONT_CAPABLE_CATEGORY_NAMES = CATEGORIES.filter((category) => category.front).map(
+  (category) => category.name
+);
+
 /** Roles any business might employ, mixed in with the trade-specific ones. */
 export const GENERIC_ROLES = ["clerk", "delivery runner", "night watch", "bookkeeper", "sweeper", "apprentice"];
 

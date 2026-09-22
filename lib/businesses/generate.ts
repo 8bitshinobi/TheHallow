@@ -95,6 +95,8 @@ export type BusinessContext = Pick<GenContext, "region" | "hooks"> & {
   /** Category name, or "Any". */
   category: string;
   area: AreaChoice;
+  /** Restrict to (and force) a hidden front — only front-capable categories, front always present. */
+  frontsOnly?: boolean;
 };
 
 export type BusinessRerollField =
@@ -158,7 +160,11 @@ function generateFront(category: BusinessCategory, force: boolean): string | und
 }
 
 export function generateBusiness(context: BusinessContext): BusinessCard {
-  const category = context.category === "Any" ? pick(CATEGORIES) : categoryByName(context.category);
+  const pool = context.frontsOnly ? CATEGORIES.filter((c) => c.front) : CATEGORIES;
+  const category =
+    context.category === "Any"
+      ? pick(pool.length > 0 ? pool : CATEGORIES)
+      : categoryByName(context.category);
   const area = resolveArea(context.area);
   return {
     established: false,
@@ -171,7 +177,9 @@ export function generateBusiness(context: BusinessContext): BusinessCard {
     goods: generateGoods(category, area),
     patrons: generatePatrons(category),
     rumors: generateRumors(context.hooks, 2, 4),
-    front: generateFront(category, false),
+    // "Fronts only" forces one on any front-capable category, rather than
+    // leaving it to the category's normal chance.
+    front: generateFront(category, Boolean(context.frontsOnly)),
     location: context.region?.name ?? "",
     locationId: context.region?.id,
   };
@@ -305,9 +313,11 @@ export function fillEstablishedBusinessBlanks(card: BusinessCard, context: Busin
   }
 
   if (!next.front) {
-    // Same odds as first generation — a blank front might genuinely mean
-    // "not a front for anything," not "not yet rolled," so this doesn't force one.
-    const front = generateFront(category, false);
+    // Same odds as first generation by default — a blank front might
+    // genuinely mean "not a front for anything," not "not yet rolled," so
+    // this doesn't normally force one. "Fronts only" is an explicit request
+    // for a front, though, so it forces one on any front-capable category.
+    const front = generateFront(category, Boolean(context.frontsOnly));
     if (front) {
       next = { ...next, front };
       rolled.push("front");

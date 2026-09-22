@@ -15,7 +15,7 @@ import {
   type FillableBusinessField,
   type ToppableBusinessField,
 } from "@/lib/businesses/generate";
-import { CATEGORY_NAMES } from "@/lib/businesses/tables";
+import { CATEGORY_NAMES, FRONT_CAPABLE_CATEGORY_NAMES } from "@/lib/businesses/tables";
 import { getEstablishedBusinesses, saveRolledBusinessFields } from "@/app/businesses/actions";
 import { AREAS, isArea, type AreaChoice } from "@/lib/generatorShared";
 import { iconFor } from "@/lib/icons";
@@ -77,15 +77,28 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
   const [regionId, setRegionId] = useState("");
   const [category, setCategory] = useState("Any");
   const [area, setArea] = useState<AreaChoice>("Any");
+  const [frontsOnly, setFrontsOnly] = useState(false);
   const [card, setCard] = useState<BusinessCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [save, setSave] = useState<SaveState>({ status: "idle" });
   const [rolledSave, setRolledSave] = useState<SaveState>({ status: "idle" });
 
+  const categoryOptions = frontsOnly ? FRONT_CAPABLE_CATEGORY_NAMES : CATEGORY_NAMES;
+
+  function toggleFrontsOnly(checked: boolean) {
+    setFrontsOnly(checked);
+    // The current category might not be able to have a front at all —
+    // reset rather than leave the dropdown showing a hidden selection.
+    if (checked && category !== "Any" && !FRONT_CAPABLE_CATEGORY_NAMES.includes(category)) {
+      setCategory("Any");
+    }
+  }
+
   const context: BusinessContext = {
     region: regions.find((region) => region.id === regionId) ?? null,
     category,
     area,
+    frontsOnly,
     hooks,
   };
 
@@ -99,6 +112,7 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
           location: context.region?.name,
           category: category !== "Any" ? category : undefined,
           area: area !== "Any" ? area : undefined,
+          frontsOnly,
         })) as unknown as ApiBusiness[];
         if (businesses.length > 0) {
           const chosen = businesses[Math.floor(Math.random() * businesses.length)];
@@ -238,7 +252,7 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
             onChange={(event) => setCategory(event.target.value)}
             className={selectClass}
           >
-            {["Any", ...CATEGORY_NAMES].map((option) => (
+            {["Any", ...categoryOptions].map((option) => (
               <option key={option} value={option}>
                 {option === "Any" ? option : `${iconFor("business", { category: option })} ${option}`}
               </option>
@@ -258,6 +272,14 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
               </option>
             ))}
           </select>
+        </label>
+        <label className="flex items-center gap-1.5 self-end pb-1.5 text-xs text-black/60 dark:text-white/60">
+          <input
+            type="checkbox"
+            checked={frontsOnly}
+            onChange={(event) => toggleFrontsOnly(event.target.checked)}
+          />
+          Fronts only
         </label>
         <button
           type="button"
