@@ -716,7 +716,7 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
             // The type color is an outline ring (the at-a-glance category
             // signal); the object's icon sits centered inside it. The ring is
             // stroked inward so the node's outer edge stays at `radius`.
-            const ringWidth = Math.max(0.8, radius * 0.22);
+            const ringWidth = Math.max(0.4, radius * 0.11);
             ctx.beginPath();
             ctx.arc(x, y, radius - ringWidth / 2, 0, 2 * Math.PI);
             ctx.lineWidth = ringWidth;
