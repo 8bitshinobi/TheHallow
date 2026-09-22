@@ -69,7 +69,7 @@ this app, not a nice-to-have:
 - **Players / PCs** — player characters: identity, history, motivations,
   associations. Each PC has an **owner** (the player). Distinct from NPCs.
 
-## Added types, generators, and public read access (2026-09-21)
+## Added types, generators, and public read access (2026-09-21, updated 2026-09-22)
 
 Types added beyond the inventory above (types are free-form strings):
 - **Regions** (`region`) vs **places** (`place`): regions are large areas (The
@@ -77,20 +77,46 @@ Types added beyond the inventory above (types are free-form strings):
   `category` Town/City counts as a *location* for the generators.
 - **Taverns** (`tavern`) and **Businesses** (`business`, with a `category`
   property). Both are made by generator pages (`/taverns`, `/businesses`) that
-  mix real "established" objects with procedurally generated ones; saved
-  generations are private drafts. All generator content tables are placeholder
-  filler, not canon.
+  mix real "established" objects with procedurally generated ones. All
+  generator content tables are placeholder filler, not canon, except the NPC
+  generator's ancestry list, which is real DC20 rules content.
+- **NPCs generated via `/npcs`** (standalone) and an in-place "Generate NPC"
+  button on a place's innkeeper/proprietor field (Novice-tier DC20 stats,
+  Magazine #3, stored under a `dc20.*` property group). Same
+  established/procedural pattern as taverns/businesses. Ancestry uses DC20's
+  15-ancestry list with the sub-rolls the rules require (Beastborn/Dragonborn/
+  Fiendborn/Angelborn); Human/Elf/Dwarf are weighted 3x more common.
 
-**Public read access is opt-in per object.** A tavern/business is readable
-without login (via `/api/places`, `/api/businesses`) only when its type matches
-AND `properties.visibility = 'public'`, enforced by an RLS policy for the
-`anon` role (migrations 0002/0003). The APIs return a whitelist of fields, so
-GM-only properties (e.g. a business's `front_for`) are never exposed. There is
-no anonymous write path; POST requires the login session.
+**Two separate ideas of "available," not one visibility flag:**
+- **In-app (the generators' "established" pool)** is default-include: every
+  object of that type is usable unless `properties.visibility = 'private'`.
+  Saving from a generator no longer marks anything private — a saved object
+  is just immediately usable in-app, not automatically public.
+- **The anonymous public API** (`/api/places`, `/api/businesses`; none exists
+  for NPCs) stays opt-in: readable without login only when `properties.visibility
+  = 'public'`, enforced by an RLS policy for the `anon` role (migrations
+  0002/0003). The APIs return a whitelist of fields, so GM-only properties
+  (e.g. a business's `front_for`) are never exposed there. No anonymous write
+  path; POST requires the login session.
+- A literal "public by default" model was considered and rejected — it would
+  let anyone with the site's public key read GM secrets straight from
+  Postgres, bypassing the APIs' field whitelist entirely.
+
+**Established results with blank fields get randomly filled in for display**
+(tagged "rolled" in the UI, with a "Save rolled fields" action to make it
+real) rather than shown sparse — this applies to all three generators. A list
+field with *some* real content but fewer items than a full generation
+produces gets topped up (new items appended, real ones never touched or
+reordered) rather than treated as already-complete.
 
 **Icons:** shown for any object; resolved at display time from `properties.icon`
 (manual override), then category, then type (`lib/icons.ts`). Never stored
 automatically.
+
+**Theme:** the site is forced to a dark gray theme (`#242424`) for everyone,
+regardless of OS light/dark preference (Scott's explicit choice, not a
+default) — see `app/globals.css`'s `@custom-variant dark` and the permanent
+`dark` class on `<html>` in `app/layout.tsx`.
 
 ## Multi-user access: players and suggestions
 
