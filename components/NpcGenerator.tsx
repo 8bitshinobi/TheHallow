@@ -3,9 +3,18 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Field } from "@/components/generatorParts";
-import { getEstablishedNpcs, saveNpc } from "@/app/npcs/actions";
+import { getEstablishedNpcs, saveNpc, saveRolledNpcFields } from "@/app/npcs/actions";
 import { iconFor } from "@/lib/icons";
-import { generateNpc, rerollNpcField, type NpcCandidate, type NpcCard, type NpcRerollField } from "@/lib/npcs/generate";
+import {
+  fillEstablishedNpcBlanks,
+  generateNpc,
+  rerollNpcField,
+  rolledNpcFieldsToProperties,
+  type FillableNpcField,
+  type NpcCandidate,
+  type NpcCard,
+  type NpcRerollField,
+} from "@/lib/npcs/generate";
 import { OCCUPATION_TYPES, type OccupationType } from "@/lib/npcs/tables";
 import type { Region } from "@/lib/taverns/generate";
 
@@ -77,6 +86,7 @@ export function NpcGenerator({
   const [card, setCard] = useState<NpcCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [save, setSave] = useState<SaveState>({ status: "idle" });
+  const [rolledSave, setRolledSave] = useState<SaveState>({ status: "idle" });
 
   const region = regions.find((r) => r.id === regionId) ?? null;
   const context = {
@@ -88,6 +98,7 @@ export function NpcGenerator({
   async function generate() {
     setBusy(true);
     setSave({ status: "idle" });
+    setRolledSave({ status: "idle" });
     try {
       if (Math.random() < ESTABLISHED_CHANCE) {
         const npcs = (await getEstablishedNpcs({
@@ -96,7 +107,11 @@ export function NpcGenerator({
         })) as unknown as ApiNpc[];
         if (npcs.length > 0) {
           const chosen = npcs[Math.floor(Math.random() * npcs.length)];
-          setCard(fromApi(chosen, regions));
+          // Any fields left blank on the real record get randomly filled in
+          // for display (tagged "rolled" below) rather than shown empty —
+          // likely for the archive's hand-written NPCs, which predate these
+          // fields entirely.
+          setCard(fillEstablishedNpcBlanks(fromApi(chosen, regions), context));
           return;
         }
       }
@@ -106,10 +121,33 @@ export function NpcGenerator({
     }
   }
 
+  /** True for a field that's tagged "rolled" — random, not yet real archive content. */
+  function isRolled(field: FillableNpcField): boolean {
+    return card?.rolledFields?.includes(field) ?? false;
+  }
+
   function reroll(field: NpcRerollField) {
-    if (!card || card.established) return;
+    if (!card) return;
+    // On an established card, only a field that's already "rolled" (not
+    // real) can be rerolled — everything actually in the archive is locked.
+    // "name" is never fillable (a real object always has one), so it's
+    // never rerollable once established.
+    if (card.established && (field === "name" || !isRolled(field))) return;
     setCard(rerollNpcField(card, field, context));
     setSave({ status: "idle" });
+  }
+
+  async function saveRolledFields() {
+    if (!card?.id || !card.rolledFields?.length) return;
+    setRolledSave({ status: "saving" });
+    const result = await saveRolledNpcFields(card.id, rolledNpcFieldsToProperties(card));
+    if ("error" in result) {
+      setRolledSave({ status: "error", message: result.error });
+      return;
+    }
+    setRolledSave({ status: "saved", id: card.id });
+    // Now genuinely real, so the tags/rerolls for those fields go away.
+    setCard((prev) => (prev ? { ...prev, rolledFields: [] } : prev));
   }
 
   async function handleSave() {
@@ -207,28 +245,60 @@ export function NpcGenerator({
             <p className="text-xs text-black/50 dark:text-white/50">{card.location}</p>
           )}
 
-          <Field label="Ancestry" onReroll={card.established ? undefined : () => reroll("ancestry")}>
+          <Field
+            label="Ancestry"
+            tag={isRolled("ancestry") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("ancestry") ? () => reroll("ancestry") : undefined}
+          >
             {card.ancestry}
           </Field>
-          <Field label="Description" onReroll={card.established ? undefined : () => reroll("description")}>
+          <Field
+            label="Description"
+            tag={isRolled("description") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("description") ? () => reroll("description") : undefined}
+          >
             {card.description}
           </Field>
-          <Field label="Personality" onReroll={card.established ? undefined : () => reroll("personality")}>
+          <Field
+            label="Personality"
+            tag={isRolled("personality") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("personality") ? () => reroll("personality") : undefined}
+          >
             {card.personality}
           </Field>
-          <Field label="Ideals" onReroll={card.established ? undefined : () => reroll("ideals")}>
+          <Field
+            label="Ideals"
+            tag={isRolled("ideals") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("ideals") ? () => reroll("ideals") : undefined}
+          >
             {card.ideals}
           </Field>
-          <Field label="Flaws" onReroll={card.established ? undefined : () => reroll("flaws")}>
+          <Field
+            label="Flaws"
+            tag={isRolled("flaws") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("flaws") ? () => reroll("flaws") : undefined}
+          >
             {card.flaws}
           </Field>
-          <Field label="Bonds" onReroll={card.established ? undefined : () => reroll("bonds")}>
+          <Field
+            label="Bonds"
+            tag={isRolled("bonds") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("bonds") ? () => reroll("bonds") : undefined}
+          >
             {card.bonds}
           </Field>
-          <Field label="Motivation" onReroll={card.established ? undefined : () => reroll("motivation")}>
+          <Field
+            label="Motivation"
+            tag={isRolled("motivation") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("motivation") ? () => reroll("motivation") : undefined}
+          >
             {card.motivation}
           </Field>
-          <Field label="Occupation" onReroll={card.established ? undefined : () => reroll("occupation")}>
+          <Field
+            label="Occupation"
+            tag={isRolled("occupation") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("occupation") ? () => reroll("occupation") : undefined}
+          >
             {card.occupation}
           </Field>
 
@@ -253,6 +323,29 @@ export function NpcGenerator({
               )}
               {save.status === "error" && (
                 <span className="text-sm text-red-600 dark:text-red-400">{save.message}</span>
+              )}
+            </footer>
+          )}
+
+          {card.established && card.rolledFields && card.rolledFields.length > 0 && (
+            <footer className="flex flex-wrap items-center gap-3 border-t border-black/10 pt-3 dark:border-white/10">
+              <span className="text-xs text-black/50 dark:text-white/50">
+                Fields tagged &quot;rolled&quot; above were blank in the archive and randomly filled
+                in just now.
+              </span>
+              <button
+                type="button"
+                onClick={saveRolledFields}
+                disabled={rolledSave.status === "saving" || rolledSave.status === "saved"}
+                className={buttonClass}
+              >
+                {rolledSave.status === "saving" ? "Saving…" : "Save rolled fields to this NPC"}
+              </button>
+              {rolledSave.status === "saved" && (
+                <span className="text-sm text-green-700 dark:text-green-400">Saved.</span>
+              )}
+              {rolledSave.status === "error" && (
+                <span className="text-sm text-red-600 dark:text-red-400">{rolledSave.message}</span>
               )}
             </footer>
           )}

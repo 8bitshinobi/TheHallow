@@ -47,7 +47,27 @@ export type NpcCard = NpcFlavor & {
   occupation: string;
   location: string;
   locationId?: string;
+  /**
+   * Fields that were blank on a real, established NPC and got randomly
+   * filled in for display (see fillEstablishedNpcBlanks) rather than
+   * coming from the archive — likely because it predates these fields
+   * (the archive's 8 hand-written NPCs use older field names like `role`
+   * and `Description`). Undefined/empty on a fully-real or brand-new card.
+   * Cleared once those fields are actually saved.
+   */
+  rolledFields?: FillableNpcField[];
 };
+
+/** Every NpcRerollField except "name" — a real object's name is never blank. */
+export type FillableNpcField =
+  | "ancestry"
+  | "description"
+  | "personality"
+  | "ideals"
+  | "flaws"
+  | "bonds"
+  | "motivation"
+  | "occupation";
 
 export type NpcContext = {
   occupationType: OccupationType | "Any";
@@ -169,6 +189,91 @@ export function rerollNpcField(card: NpcCard, field: NpcRerollField, context: Np
     case "occupation":
       return { ...card, ...occupationFor(card.occupationType ?? "Any") };
   }
+}
+
+/**
+ * For a real, established NPC that has some fields left blank in the
+ * archive (very likely for the archive's hand-written NPCs, which predate
+ * these fields entirely), rolls fresh values for just those fields —
+ * reusing the exact same generator functions a brand-new NPC uses — so a
+ * sparse real record still reads like a complete one. Never touches a
+ * field that already has a value. Returns which fields were actually
+ * filled in, via `rolledFields`, so the UI can mark them as not-yet-real
+ * and offer to save them into the archive.
+ */
+export function fillEstablishedNpcBlanks(card: NpcCard, context: NpcContext): NpcCard {
+  let next = card;
+  const rolled: FillableNpcField[] = [];
+
+  if (!next.ancestry) {
+    next = { ...next, ancestry: generateAncestry() };
+    rolled.push("ancestry");
+  }
+  if (!next.description) {
+    next = { ...next, description: generateDescription() };
+    rolled.push("description");
+  }
+  if (!next.personality) {
+    next = { ...next, personality: generatePersonality() };
+    rolled.push("personality");
+  }
+  if (!next.ideals) {
+    next = { ...next, ideals: pick(IDEALS) };
+    rolled.push("ideals");
+  }
+  if (!next.flaws) {
+    next = { ...next, flaws: pick(FLAWS) };
+    rolled.push("flaws");
+  }
+  if (!next.bonds) {
+    next = { ...next, bonds: generateBonds(context.npcCandidates) };
+    rolled.push("bonds");
+  }
+  if (!next.motivation) {
+    next = { ...next, motivation: pick(MOTIVATIONS) };
+    rolled.push("motivation");
+  }
+  if (!next.occupation) {
+    next = { ...next, ...occupationFor(context.occupationType) };
+    rolled.push("occupation");
+  }
+
+  return rolled.length > 0 ? { ...next, rolledFields: rolled } : next;
+}
+
+/** Storage-shaped properties for just a card's rolled (not-yet-real) fields, for saving them into the archive. */
+export function rolledNpcFieldsToProperties(card: NpcCard): Record<string, string> {
+  const properties: Record<string, string> = {};
+  for (const field of card.rolledFields ?? []) {
+    switch (field) {
+      case "ancestry":
+        properties.ancestry = card.ancestry;
+        break;
+      case "description":
+        properties.description = card.description;
+        break;
+      case "personality":
+        properties.personality = card.personality;
+        break;
+      case "ideals":
+        properties.ideals = card.ideals;
+        break;
+      case "flaws":
+        properties.flaws = card.flaws;
+        break;
+      case "bonds":
+        properties.bonds = card.bonds;
+        break;
+      case "motivation":
+        properties.motivation = card.motivation;
+        break;
+      case "occupation":
+        properties.occupation = card.occupation;
+        if (card.occupationType) properties.occupation_type = card.occupationType;
+        break;
+    }
+  }
+  return properties;
 }
 
 export { OCCUPATION_TYPES };
