@@ -13,6 +13,7 @@ import {
   randomInt,
   sample,
   themeWords,
+  toLines,
   type GenContext,
   type Region,
   type Rumor,
@@ -52,7 +53,24 @@ export type BusinessCard = {
   front?: string;
   location: string;
   locationId?: string;
+  /**
+   * Fields that were blank on a real, established business and got randomly
+   * filled in for display (see fillEstablishedBusinessBlanks) rather than
+   * coming from the archive. Undefined/empty on a fully-real or brand-new
+   * card. Cleared once those fields are actually saved.
+   */
+  rolledFields?: FillableBusinessField[];
 };
+
+export type FillableBusinessField =
+  | "description"
+  | "proprietor"
+  | "area"
+  | "employees"
+  | "goods"
+  | "patrons"
+  | "rumors"
+  | "front";
 
 export type BusinessContext = Pick<GenContext, "region" | "hooks"> & {
   /** Category name, or "Any". */
@@ -170,4 +188,97 @@ export function rerollBusinessField(
 /** Whether a category can have a hidden front (drives the "add front" button). */
 export function canHaveFront(categoryName: string): boolean {
   return Boolean(CATEGORIES.find((category) => category.name === categoryName)?.front);
+}
+
+/**
+ * For a real, established business that has some fields left blank in the
+ * archive, rolls fresh values for just those fields — reusing the exact same
+ * generator functions a brand-new business uses — so a sparse real record
+ * still reads like a complete one at the table. Never touches a field that
+ * already has a value. Returns which fields were actually filled in, via
+ * `rolledFields`, so the UI can mark them as not-yet-real and offer to save
+ * them into the archive.
+ */
+export function fillEstablishedBusinessBlanks(card: BusinessCard, context: BusinessContext): BusinessCard {
+  const category = categoryByName(card.category);
+  let next = card;
+  const rolled: FillableBusinessField[] = [];
+
+  // Area first: goods pricing and staff counts depend on it.
+  if (!next.area) {
+    next = { ...next, area: resolveArea(context.area) };
+    rolled.push("area");
+  }
+  const area = next.area!;
+
+  if (!next.description) {
+    next = { ...next, description: generateDescription(category, context.region, area) };
+    rolled.push("description");
+  }
+  if (!next.proprietor) {
+    next = { ...next, ...generateProprietor() };
+    rolled.push("proprietor");
+  }
+  if (next.employees.length === 0) {
+    next = { ...next, employees: generateStaff(category, area) };
+    rolled.push("employees");
+  }
+  if (next.goods.length === 0) {
+    next = { ...next, goods: generateGoods(category, area) };
+    rolled.push("goods");
+  }
+  if (next.patrons.length === 0) {
+    next = { ...next, patrons: generatePatrons(category) };
+    rolled.push("patrons");
+  }
+  if (next.rumors.length === 0) {
+    next = { ...next, rumors: generateRumors(context.hooks, 2, 4) };
+    rolled.push("rumors");
+  }
+  if (!next.front) {
+    // Same odds as first generation — a blank front might genuinely mean
+    // "not a front for anything," not "not yet rolled," so this doesn't force one.
+    const front = generateFront(category, false);
+    if (front) {
+      next = { ...next, front };
+      rolled.push("front");
+    }
+  }
+
+  return rolled.length > 0 ? { ...next, rolledFields: rolled } : next;
+}
+
+/** Storage-shaped properties for just a card's rolled (not-yet-real) fields, for saving them into the archive. */
+export function rolledBusinessFieldsToProperties(card: BusinessCard): Record<string, string> {
+  const properties: Record<string, string> = {};
+  for (const field of card.rolledFields ?? []) {
+    switch (field) {
+      case "description":
+        properties.description = card.description;
+        break;
+      case "proprietor":
+        properties.proprietor = card.proprietor;
+        properties.proprietor_quirk = card.proprietorQuirk;
+        break;
+      case "area":
+        if (card.area) properties.area = card.area;
+        break;
+      case "employees":
+        properties.employees = toLines(card.employees);
+        break;
+      case "goods":
+        properties.goods = toLines(card.goods);
+        break;
+      case "patrons":
+        properties.patrons = toLines(card.patrons);
+        break;
+      case "rumors":
+        properties.rumors = toLines(card.rumors.map((rumor) => rumor.text));
+        break;
+      case "front":
+        if (card.front) properties.front_for = card.front;
+        break;
+    }
+  }
+  return properties;
 }

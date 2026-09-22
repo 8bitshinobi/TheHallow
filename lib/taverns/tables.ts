@@ -7,6 +7,10 @@
 export const CROWDS = ["Townsfolk", "Travelers", "Border-wary", "Drawing-season"] as const;
 export type Crowd = (typeof CROWDS)[number];
 
+export function isCrowd(value: string | undefined): value is Crowd {
+  return (CROWDS as readonly string[]).includes(value ?? "");
+}
+
 export const NAME_FIRST = [
   "Crooked", "Gilded", "Hollow", "Merry", "Rusty", "Sleeping", "Weeping", "Broken",
   "Laughing", "Last", "Drowned", "Wandering", "Tarnished", "Salted", "Quiet", "Thirsty",

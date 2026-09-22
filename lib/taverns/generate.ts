@@ -24,6 +24,7 @@ import {
   SIGNATURE_FOOD_EFFECTS,
   type Crowd,
 } from "./tables";
+export { isCrowd } from "./tables";
 import {
   AREA_ADJECTIVES,
   generateEmployees,
@@ -94,7 +95,25 @@ export type TavernCard = {
   locationId?: string;
   /** The crowd choice used; "Any" mixes every crowd's patrons. */
   crowd?: CrowdChoice;
+  /**
+   * Fields that were blank on a real, established tavern and got randomly
+   * filled in for display (see fillEstablishedTavernBlanks) rather than
+   * coming from the archive. Undefined/empty on a fully-real or brand-new
+   * card. Cleared once those fields are actually saved.
+   */
+  rolledFields?: FillableTavernField[];
 };
+
+export type FillableTavernField =
+  | "description"
+  | "innkeeper"
+  | "area"
+  | "employees"
+  | "drinks"
+  | "food"
+  | "patrons"
+  | "rumors"
+  | "signature";
 
 export type GenContext = {
   region: Region | null;
@@ -254,4 +273,106 @@ export function rerollField(card: TavernCard, field: RerollField, context: GenCo
     case "employees":
       return { ...card, employees: generateEmployees(TAVERN_ROLES, area, "tavern") };
   }
+}
+
+/**
+ * For a real, established tavern that has some fields left blank in the
+ * archive, rolls fresh values for just those fields — reusing the exact same
+ * generator functions a brand-new tavern uses — so a sparse real record
+ * still reads like a complete one at the table. Never touches a field that
+ * already has a value. Returns which fields were actually filled in, via
+ * `rolledFields`, so the UI can mark them as not-yet-real and offer to save
+ * them into the archive.
+ */
+export function fillEstablishedTavernBlanks(card: TavernCard, context: GenContext): TavernCard {
+  let next = card;
+  const rolled: FillableTavernField[] = [];
+
+  // Area first: drinks/food/employees pricing and counts depend on it.
+  if (!next.area) {
+    next = { ...next, area: resolveArea(context.area) };
+    rolled.push("area");
+  }
+  const area = next.area!;
+
+  if (!next.description) {
+    next = { ...next, description: generateDescription(context.region, area) };
+    rolled.push("description");
+  }
+  if (!next.innkeeper) {
+    next = { ...next, ...generateInnkeeper() };
+    rolled.push("innkeeper");
+  }
+  if (next.employees.length === 0) {
+    next = { ...next, employees: generateEmployees(TAVERN_ROLES, area, "tavern") };
+    rolled.push("employees");
+  }
+  if (next.drinks.length === 0) {
+    next = { ...next, drinks: generateDrinks(area) };
+    rolled.push("drinks");
+  }
+  if (next.food.length === 0) {
+    next = { ...next, food: generateFood(area) };
+    rolled.push("food");
+  }
+  if (next.patrons.length === 0) {
+    const crowd = next.crowd && next.crowd !== "Any" ? next.crowd : context.crowd;
+    next = { ...next, crowd, patrons: generatePatrons(crowd) };
+    rolled.push("patrons");
+  }
+  if (next.rumors.length === 0) {
+    next = { ...next, rumors: generateRumors(context.hooks) };
+    rolled.push("rumors");
+  }
+  if (!next.signature) {
+    // Same odds as first generation — a blank signature might genuinely mean
+    // "no specialty," not "not yet rolled," so this doesn't force one.
+    const maybe = maybeSignature(context.region, area);
+    if ("signature" in maybe) {
+      next = { ...next, ...maybe };
+      rolled.push("signature");
+    }
+  }
+
+  return rolled.length > 0 ? { ...next, rolledFields: rolled } : next;
+}
+
+/** Storage-shaped properties for just a card's rolled (not-yet-real) fields, for saving them into the archive. */
+export function rolledTavernFieldsToProperties(card: TavernCard): Record<string, string> {
+  const properties: Record<string, string> = {};
+  for (const field of card.rolledFields ?? []) {
+    switch (field) {
+      case "description":
+        properties.description = card.description;
+        break;
+      case "innkeeper":
+        properties.innkeeper = card.innkeeper;
+        properties.innkeeper_quirk = card.innkeeperQuirk;
+        break;
+      case "area":
+        if (card.area) properties.area = card.area;
+        break;
+      case "employees":
+        properties.employees = toLines(card.employees);
+        break;
+      case "drinks":
+        properties.drinks = toLines(card.drinks);
+        break;
+      case "food":
+        properties.food = toLines(card.food);
+        break;
+      case "patrons":
+        properties.patrons = toLines(card.patrons);
+        if (card.crowd) properties.patron_crowd = card.crowd;
+        break;
+      case "rumors":
+        properties.rumors = toLines(card.rumors.map((rumor) => rumor.text));
+        break;
+      case "signature":
+        if (card.signature) properties.signature = card.signature;
+        if (card.signatureKind) properties.signature_kind = card.signatureKind;
+        break;
+    }
+  }
+  return properties;
 }

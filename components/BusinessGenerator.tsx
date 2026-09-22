@@ -5,14 +5,17 @@ import { useState } from "react";
 import { Field, List } from "@/components/generatorParts";
 import {
   canHaveFront,
+  fillEstablishedBusinessBlanks,
   generateBusiness,
   rerollBusinessField,
+  rolledBusinessFieldsToProperties,
   type BusinessCard,
   type BusinessContext,
   type BusinessRerollField,
+  type FillableBusinessField,
 } from "@/lib/businesses/generate";
 import { CATEGORY_NAMES } from "@/lib/businesses/tables";
-import { getEstablishedBusinesses } from "@/app/businesses/actions";
+import { getEstablishedBusinesses, saveRolledBusinessFields } from "@/app/businesses/actions";
 import { AREAS, isArea, type AreaChoice } from "@/lib/generatorShared";
 import { iconFor } from "@/lib/icons";
 import { toLines, type Region } from "@/lib/taverns/generate";
@@ -35,6 +38,7 @@ type ApiBusiness = {
   proprietor_quirk: string;
   icon: string;
   area: string;
+  front_for: string;
   employees: string[];
   goods: string[];
   patrons: string[];
@@ -53,6 +57,7 @@ function fromApi(business: ApiBusiness, regions: Region[]): BusinessCard {
     proprietor: business.proprietor,
     proprietorQuirk: business.proprietor_quirk,
     area: isArea(business.area) ? business.area : undefined,
+    front: business.front_for || undefined,
     employees: business.employees,
     goods: business.goods,
     patrons: business.patrons,
@@ -74,6 +79,7 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
   const [card, setCard] = useState<BusinessCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [save, setSave] = useState<SaveState>({ status: "idle" });
+  const [rolledSave, setRolledSave] = useState<SaveState>({ status: "idle" });
 
   const context: BusinessContext = {
     region: regions.find((region) => region.id === regionId) ?? null,
@@ -85,6 +91,7 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
   async function generate() {
     setBusy(true);
     setSave({ status: "idle" });
+    setRolledSave({ status: "idle" });
     try {
       if (Math.random() < ESTABLISHED_CHANCE) {
         const businesses = (await getEstablishedBusinesses({
@@ -94,7 +101,9 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
         })) as unknown as ApiBusiness[];
         if (businesses.length > 0) {
           const chosen = businesses[Math.floor(Math.random() * businesses.length)];
-          setCard(fromApi(chosen, regions));
+          // Any fields left blank on the real record get randomly filled in
+          // for display (tagged "rolled" below) rather than shown empty.
+          setCard(fillEstablishedBusinessBlanks(fromApi(chosen, regions), context));
           return;
         }
       }
@@ -104,10 +113,55 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
     }
   }
 
+  /** True for a field that's tagged "rolled" — random, not yet real archive content. */
+  function isRolled(field: FillableBusinessField): boolean {
+    return card?.rolledFields?.includes(field) ?? false;
+  }
+
+  // BusinessRerollField (the manual "reroll" button names) doesn't map 1:1
+  // onto FillableBusinessField ("rumor" is "rumors" there), so this maps
+  // each button to whichever underlying field it corresponds to, for
+  // deciding whether an established card's (already-real) value is locked
+  // or (still-rolled) is fair game.
+  function canRerollOnEstablished(field: BusinessRerollField): boolean {
+    switch (field) {
+      case "proprietor":
+        return isRolled("proprietor");
+      case "goods":
+        return isRolled("goods");
+      case "patrons":
+        return isRolled("patrons");
+      case "rumor":
+        return isRolled("rumors");
+      case "front":
+        return isRolled("front");
+      case "employees":
+        return isRolled("employees");
+      case "name":
+        return false;
+    }
+  }
+
   function reroll(field: BusinessRerollField) {
-    if (!card || card.established) return;
+    if (!card) return;
+    // On an established card, only a field that's already "rolled" (not
+    // real) can be rerolled — everything actually in the archive is locked.
+    if (card.established && !canRerollOnEstablished(field)) return;
     setCard(rerollBusinessField(card, field, context));
     setSave({ status: "idle" });
+  }
+
+  async function saveRolledFields() {
+    if (!card?.id || !card.rolledFields?.length) return;
+    setRolledSave({ status: "saving" });
+    const result = await saveRolledBusinessFields(card.id, rolledBusinessFieldsToProperties(card));
+    if ("error" in result) {
+      setRolledSave({ status: "error", message: result.error });
+      return;
+    }
+    setRolledSave({ status: "saved", id: card.id });
+    // Now genuinely real, so the tags/rerolls for those fields go away.
+    setCard((prev) => (prev ? { ...prev, rolledFields: [] } : prev));
   }
 
   async function saveBusiness() {
@@ -236,12 +290,18 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
 
           <p className="text-xs text-black/50 dark:text-white/50">
             {[card.category, card.location, card.area].filter(Boolean).join(" · ")}
+            {isRolled("area") && (
+              <span className="ml-2 rounded-full border border-dashed border-black/30 px-1.5 py-0.5 text-[10px] text-black/60 dark:border-white/30 dark:text-white/60">
+                rolled
+              </span>
+            )}
           </p>
           <p className="text-sm">{card.description}</p>
 
           <Field
             label="Proprietor"
-            onReroll={card.established ? undefined : () => reroll("proprietor")}
+            tag={isRolled("proprietor") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("proprietor") ? () => reroll("proprietor") : undefined}
           >
             {card.proprietor}
             {card.proprietorQuirk && (
@@ -251,7 +311,8 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
           {(card.employees.length > 0 || !card.established) && (
             <Field
               label={`Staff (${card.employees.length})`}
-              onReroll={card.established ? undefined : () => reroll("employees")}
+              tag={isRolled("employees") ? "rolled" : undefined}
+              onReroll={!card.established || isRolled("employees") ? () => reroll("employees") : undefined}
             >
               {card.employees.length > 0 ? (
                 <List items={card.employees} />
@@ -262,17 +323,23 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
           )}
           <Field
             label="Goods & services"
-            onReroll={card.established ? undefined : () => reroll("goods")}
+            tag={isRolled("goods") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("goods") ? () => reroll("goods") : undefined}
           >
             <List items={card.goods} />
           </Field>
           <Field
             label={`Patrons (${card.patrons.length})`}
-            onReroll={card.established ? undefined : () => reroll("patrons")}
+            tag={isRolled("patrons") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("patrons") ? () => reroll("patrons") : undefined}
           >
             <List items={card.patrons} />
           </Field>
-          <Field label="Rumors" onReroll={card.established ? undefined : () => reroll("rumor")}>
+          <Field
+            label="Rumors"
+            tag={isRolled("rumors") ? "rolled" : undefined}
+            onReroll={!card.established || isRolled("rumors") ? () => reroll("rumor") : undefined}
+          >
             <ul className="list-disc space-y-1 pl-5">
               {card.rumors.map((rumor) => (
                 <li key={rumor.text}>
@@ -295,7 +362,8 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
             <div className="rounded border border-dashed border-black/30 p-3 dark:border-white/30">
               <Field
                 label="GM only — hidden front"
-                onReroll={card.established ? undefined : () => reroll("front")}
+                tag={isRolled("front") ? "rolled" : undefined}
+                onReroll={!card.established || isRolled("front") ? () => reroll("front") : undefined}
               >
                 {card.front}
               </Field>
@@ -330,6 +398,29 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
               )}
               {save.status === "error" && (
                 <span className="text-sm text-red-600 dark:text-red-400">{save.message}</span>
+              )}
+            </footer>
+          )}
+
+          {card.established && card.rolledFields && card.rolledFields.length > 0 && (
+            <footer className="flex flex-wrap items-center gap-3 border-t border-black/10 pt-3 dark:border-white/10">
+              <span className="text-xs text-black/50 dark:text-white/50">
+                Fields tagged &quot;rolled&quot; above were blank in the archive and randomly filled
+                in just now.
+              </span>
+              <button
+                type="button"
+                onClick={saveRolledFields}
+                disabled={rolledSave.status === "saving" || rolledSave.status === "saved"}
+                className={buttonClass}
+              >
+                {rolledSave.status === "saving" ? "Saving…" : "Save rolled fields to this business"}
+              </button>
+              {rolledSave.status === "saved" && (
+                <span className="text-sm text-green-700 dark:text-green-400">Saved.</span>
+              )}
+              {rolledSave.status === "error" && (
+                <span className="text-sm text-red-600 dark:text-red-400">{rolledSave.message}</span>
               )}
             </footer>
           )}
