@@ -13,6 +13,7 @@ const NPC_CONFIG = {
   textFields: [
     "occupation",
     "occupation_type",
+    "ancestry",
     "description",
     "personality",
     "ideals",
@@ -44,6 +45,7 @@ export async function getNpcCandidates(excludeId?: string): Promise<NpcCandidate
 /** Saves a standalone-generator NPC card (Part 1) — no mechanical stats. */
 export async function saveNpc(card: {
   name: string;
+  ancestry: string;
   occupation: string;
   occupationType?: string;
   description: string;
@@ -58,6 +60,7 @@ export async function saveNpc(card: {
   const supabase = await requireUser();
 
   const properties: Record<string, string> = {
+    ancestry: card.ancestry,
     occupation: card.occupation,
     description: card.description,
     personality: card.personality,
@@ -117,6 +120,7 @@ export async function generateNpcForPlace(input: {
   const properties: Record<string, string> = {
     occupation: mapped.occupation,
     occupation_type: mapped.occupationType,
+    ancestry: flavor.ancestry,
     description: flavor.description,
     personality: flavor.personality,
     ideals: flavor.ideals,

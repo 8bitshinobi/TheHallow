@@ -1,9 +1,14 @@
 import { pick } from "@/lib/generatorShared";
 import {
+  ANCESTRIES,
   APPEARANCE_HEIGHTS,
   APPEARANCE_TRAITS,
+  BEAST_ORIGINS,
   BOND_FILLER_NAMES,
   BOND_TEMPLATES,
+  DRACONIC_ORIGINS,
+  FALLEN_CHANCE,
+  FIENDISH_ORIGINS,
   FLAWS,
   IDEALS,
   MOTIVATIONS,
@@ -13,6 +18,7 @@ import {
   OCCUPATION_TYPES,
   PERSONALITY_QUIRKS,
   PERSONALITY_TRAITS,
+  REDEEMED_CHANCE,
   type OccupationType,
 } from "./tables";
 
@@ -21,6 +27,8 @@ export type NpcCandidate = { id: string; name: string };
 /** The flavor-only fields shared by the standalone generator and the in-place button. */
 export type NpcFlavor = {
   name: string;
+  /** DC20 ancestry, formatted for display — e.g. "Beastborn (Wolf)", "Fiendborn (Umbral, Redeemed)". */
+  ancestry: string;
   description: string;
   personality: string;
   ideals: string;
@@ -50,6 +58,7 @@ export type NpcContext = {
 
 export type NpcRerollField =
   | "name"
+  | "ancestry"
   | "description"
   | "personality"
   | "ideals"
@@ -60,6 +69,31 @@ export type NpcRerollField =
 
 function generateName(): string {
   return `${pick(NAME_FIRST)} ${pick(NAME_LAST)}`;
+}
+
+/**
+ * DC20's 15-ancestry list, with the sub-rolls the rules require for a few of
+ * them: Beastborn gets a Beast Origin, Dragonborn a Draconic Origin, Fiendborn
+ * always gets a Fiendish Origin plus a small chance of being "Redeemed", and
+ * Angelborn gets a mirrored small chance of being "Fallen".
+ */
+function generateAncestry(): string {
+  const ancestry = pick(ANCESTRIES);
+  switch (ancestry) {
+    case "Beastborn":
+      return `Beastborn (${pick(BEAST_ORIGINS)})`;
+    case "Dragonborn":
+      return `Dragonborn (${pick(DRACONIC_ORIGINS)})`;
+    case "Fiendborn": {
+      const origin = pick(FIENDISH_ORIGINS);
+      const redeemed = Math.random() < REDEEMED_CHANCE;
+      return `Fiendborn (${origin}${redeemed ? ", Redeemed" : ""})`;
+    }
+    case "Angelborn":
+      return Math.random() < FALLEN_CHANCE ? "Angelborn (Fallen)" : "Angelborn";
+    default:
+      return ancestry;
+  }
 }
 
 function generateDescription(): string {
@@ -94,6 +128,7 @@ function occupationFor(occupationType: OccupationType | "Any"): {
 export function generateFlavor(candidates: NpcCandidate[]): NpcFlavor {
   return {
     name: generateName(),
+    ancestry: generateAncestry(),
     description: generateDescription(),
     personality: generatePersonality(),
     ideals: pick(IDEALS),
@@ -117,6 +152,8 @@ export function rerollNpcField(card: NpcCard, field: NpcRerollField, context: Np
   switch (field) {
     case "name":
       return { ...card, name: generateName() };
+    case "ancestry":
+      return { ...card, ancestry: generateAncestry() };
     case "description":
       return { ...card, description: generateDescription() };
     case "personality":

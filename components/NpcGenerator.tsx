@@ -24,6 +24,7 @@ type ApiNpc = {
   id: string;
   name: string;
   icon: string;
+  ancestry: string;
   occupation: string;
   occupation_type: string;
   description: string;
@@ -45,6 +46,7 @@ function fromApi(npc: ApiNpc, regions: Region[]): NpcCard {
     id: npc.id,
     icon: npc.icon || undefined,
     name: npc.name,
+    ancestry: npc.ancestry,
     occupation: npc.occupation,
     occupationType: isOccupationType(npc.occupation_type) ? npc.occupation_type : undefined,
     description: npc.description,
@@ -116,6 +118,7 @@ export function NpcGenerator({
     try {
       const result = await saveNpc({
         name: card.name,
+        ancestry: card.ancestry,
         occupation: card.occupation,
         occupationType: card.occupationType,
         description: card.description,
@@ -200,15 +203,13 @@ export function NpcGenerator({
             )}
           </header>
 
-          <p className="text-xs text-black/50 dark:text-white/50">
-            {[card.occupation, card.location].filter(Boolean).join(" · ")}
-          </p>
-          {!card.established && (
-            <button type="button" onClick={() => reroll("occupation")} className="text-xs underline">
-              reroll occupation
-            </button>
+          {card.location && (
+            <p className="text-xs text-black/50 dark:text-white/50">{card.location}</p>
           )}
 
+          <Field label="Ancestry" onReroll={card.established ? undefined : () => reroll("ancestry")}>
+            {card.ancestry}
+          </Field>
           <Field label="Description" onReroll={card.established ? undefined : () => reroll("description")}>
             {card.description}
           </Field>
@@ -226,6 +227,9 @@ export function NpcGenerator({
           </Field>
           <Field label="Motivation" onReroll={card.established ? undefined : () => reroll("motivation")}>
             {card.motivation}
+          </Field>
+          <Field label="Occupation" onReroll={card.established ? undefined : () => reroll("occupation")}>
+            {card.occupation}
           </Field>
 
           {!card.established && (

@@ -3,6 +3,50 @@
  * canon. Edit freely.
  */
 
+/**
+ * DC20's 15-ancestry list — this one is rules content, not placeholder
+ * filler (per CLAUDE.md, DC20 and Hallow-world content are separate pools).
+ */
+export const ANCESTRIES = [
+  "Human",
+  "Elf",
+  "Dwarf",
+  "Halfling",
+  "Gnome",
+  "Orc",
+  "Dragonborn",
+  "Giantborn",
+  "Angelborn",
+  "Fiendborn",
+  "Beastborn",
+  "Gremlin",
+  "Goblin",
+  "Terraborn",
+  "Shadowborn",
+] as const;
+export type Ancestry = (typeof ANCESTRIES)[number];
+
+/** Beastborn's Beast Origin: the rulebook's 6 named examples, plus basic real-world animals (no insects) extending the same category. */
+export const BEAST_ORIGINS = [
+  "Frog", "Elephant", "Lion", "Spider", "Rabbit", "Dog",
+  "Cat", "Wolf", "Bear", "Fox", "Horse", "Owl",
+  "Hawk", "Snake", "Turtle", "Boar", "Goat", "Deer", "Rat", "Crow",
+];
+
+/** Dragonborn's Draconic Origin: Elemental or Mystic, picked as one flat list of 8. */
+export const DRACONIC_ORIGINS = [
+  "Cold", "Corrosion", "Fire", "Lightning", "Poison", // Elemental
+  "Psychic", "Radiant", "Umbral", // Mystic
+];
+
+/** Fiendborn's Fiendish Origin — always rolled (not optional). */
+export const FIENDISH_ORIGINS = ["Cold", "Corrosion", "Fire", "Poison", "Umbral"];
+
+/** Chance a Fiendborn is also "Redeemed" — a lore twist, not a coin flip. */
+export const REDEEMED_CHANCE = 0.12;
+/** Chance an Angelborn is also "Fallen" — same idea, mirrored. */
+export const FALLEN_CHANCE = 0.12;
+
 export const OCCUPATION_TYPES = [
   "Hospitality",
   "Craft",
