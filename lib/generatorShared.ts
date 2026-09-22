@@ -9,6 +9,17 @@ export function randomInt(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
+/** Picks one item, weighted: a weight of 3 is 3x as likely as a weight of 1. */
+export function pickWeighted<T>(entries: readonly (readonly [T, number])[]): T {
+  const total = entries.reduce((sum, [, weight]) => sum + weight, 0);
+  let roll = Math.random() * total;
+  for (const [item, weight] of entries) {
+    roll -= weight;
+    if (roll < 0) return item;
+  }
+  return entries[entries.length - 1][0];
+}
+
 /** Random items without repeats; returns fewer if the list is too short. */
 export function sample<T>(list: readonly T[], count: number): T[] {
   const copy = [...list];

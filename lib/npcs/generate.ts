@@ -1,6 +1,5 @@
-import { pick } from "@/lib/generatorShared";
+import { pick, pickWeighted } from "@/lib/generatorShared";
 import {
-  ANCESTRIES,
   APPEARANCE_HEIGHTS,
   APPEARANCE_TRAITS,
   BEAST_ORIGINS,
@@ -19,6 +18,7 @@ import {
   PERSONALITY_QUIRKS,
   PERSONALITY_TRAITS,
   REDEEMED_CHANCE,
+  WEIGHTED_ANCESTRIES,
   type OccupationType,
 } from "./tables";
 
@@ -78,7 +78,7 @@ function generateName(): string {
  * Angelborn gets a mirrored small chance of being "Fallen".
  */
 function generateAncestry(): string {
-  const ancestry = pick(ANCESTRIES);
+  const ancestry = pickWeighted(WEIGHTED_ANCESTRIES);
   switch (ancestry) {
     case "Beastborn":
       return `Beastborn (${pick(BEAST_ORIGINS)})`;

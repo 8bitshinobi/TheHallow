@@ -26,6 +26,19 @@ export const ANCESTRIES = [
 ] as const;
 export type Ancestry = (typeof ANCESTRIES)[number];
 
+/**
+ * Ancestry weights for the random roll: Human, Elf and Dwarf come up 3x as
+ * often as the other 12 (each of those 12 stays equally likely to each
+ * other). Adjust these numbers to retune the mix.
+ */
+const COMMON_ANCESTRIES: Ancestry[] = ["Human", "Elf", "Dwarf"];
+const COMMON_WEIGHT = 3;
+const DEFAULT_WEIGHT = 1;
+
+export const WEIGHTED_ANCESTRIES: readonly (readonly [Ancestry, number])[] = ANCESTRIES.map(
+  (ancestry) => [ancestry, COMMON_ANCESTRIES.includes(ancestry) ? COMMON_WEIGHT : DEFAULT_WEIGHT] as const
+);
+
 /** Beastborn's Beast Origin: the rulebook's 6 named examples, plus basic real-world animals (no insects) extending the same category. */
 export const BEAST_ORIGINS = [
   "Frog", "Elephant", "Lion", "Spider", "Rabbit", "Dog",
