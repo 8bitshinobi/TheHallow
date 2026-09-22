@@ -3,15 +3,20 @@ import { createClient } from "@/lib/supabase/server";
 
 /**
  * Shared GET/POST handlers for the archive's generator-backed object types
- * (taverns, businesses). One access model for all of them:
+ * (taverns, businesses). Two separate ideas of "available":
  *
- * - GET uses the anon key with no session. The database (migration 0003)
- *   only lets anon see these types when properties.visibility = 'public';
- *   the filters here repeat that so the intent is visible in code, and only
- *   the whitelisted fields are ever returned.
- * - POST requires the logged-in session (same RLS as the rest of the app),
- *   and always saves visibility=private / status=in_development regardless
- *   of what the client sends. There is no anon write path.
+ * - The anonymous public API (this file's GET) is OPT-IN. It uses the anon
+ *   key with no session. The database (migration 0003) only lets anon see
+ *   these types when properties.visibility = 'public'; the filters here
+ *   repeat that so the intent is visible in code, and only the whitelisted
+ *   fields are ever returned.
+ * - The in-app generators are default-INCLUDE: they read through the logged-in
+ *   session (lib/generatorPool.ts) and use everything except objects marked
+ *   visibility = 'private'.
+ *
+ * POST requires the logged-in session (same RLS as the rest of the app) and
+ * saves status=in_development. It sets no visibility: an unset object is in
+ * the in-app pool but is NOT public. There is no anon write path.
  */
 export type ObjectRouteConfig = {
   /** objects.type this route serves. */
@@ -33,8 +38,30 @@ export type ObjectRouteConfig = {
 const MAX_LENGTH = 4000;
 
 // Property values may hold "@[Name](uuid)" mentions; expose just the name.
-function plain(value: string): string {
+export function plain(value: string): string {
   return value.replace(/@\[([^\]]*)\]\([0-9a-fA-F-]{36}\)/g, "$1");
+}
+
+/** Turns a stored row into the flat item shape used by the API and the in-app pool. */
+export function mapRow(
+  config: Pick<ObjectRouteConfig, "textFields" | "listFields">,
+  row: { id: string; name: string; properties: unknown },
+  options: { stripMentions?: boolean; extraTextFields?: readonly string[] } = {}
+): Record<string, string | string[]> {
+  const { stripMentions = true, extraTextFields = [] } = options;
+  const clean = (value: string) => (stripMentions ? plain(value) : value);
+  const props = (row.properties ?? {}) as Record<string, string>;
+  const out: Record<string, string | string[]> = { id: row.id, name: row.name };
+  for (const field of [...config.textFields, ...extraTextFields]) {
+    out[field] = clean(props[field] ?? "");
+  }
+  for (const [field, legacyField] of config.listFields) {
+    out[field] = clean(props[field] ?? (legacyField ? props[legacyField] : "") ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+  return out;
 }
 
 export function createObjectHandlers(config: ObjectRouteConfig) {
@@ -63,20 +90,7 @@ export function createObjectHandlers(config: ObjectRouteConfig) {
       return Response.json({ error: "Could not load results" }, { status: 500 });
     }
 
-    const items = (data ?? []).map((row) => {
-      const props = (row.properties ?? {}) as Record<string, string>;
-      const out: Record<string, string | string[]> = { id: row.id, name: row.name };
-      for (const field of config.textFields) {
-        out[field] = plain(props[field] ?? "");
-      }
-      for (const [field, legacyField] of config.listFields) {
-        out[field] = plain(props[field] ?? (legacyField ? props[legacyField] : "") ?? "")
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean);
-      }
-      return out;
-    });
+    const items = (data ?? []).map((row) => mapRow(config, row));
 
     // Data changes rarely, so let browsers/CDN reuse it briefly. Un-publishing
     // can take up to ~1 minute (plus the stale window) to disappear.
@@ -128,9 +142,9 @@ export function createObjectHandlers(config: ObjectRouteConfig) {
       properties[field] = value;
     }
 
-    // Set server-side, never taken from the client: a saved object always
-    // starts private, so nothing goes public by accident.
-    properties.visibility = "private";
+    // Set server-side, never taken from the client. No visibility is set, so a
+    // saved object is available to the in-app generators but is not public
+    // (the public API is opt-in via visibility=public).
     properties.status = "in_development";
     properties.source = config.source;
 

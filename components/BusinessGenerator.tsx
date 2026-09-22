@@ -12,6 +12,7 @@ import {
   type BusinessRerollField,
 } from "@/lib/businesses/generate";
 import { CATEGORY_NAMES } from "@/lib/businesses/tables";
+import { getEstablishedBusinesses } from "@/app/businesses/actions";
 import { AREAS, isArea, type AreaChoice } from "@/lib/generatorShared";
 import { iconFor } from "@/lib/icons";
 import { toLines, type Region } from "@/lib/taverns/generate";
@@ -86,18 +87,15 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
     setSave({ status: "idle" });
     try {
       if (Math.random() < ESTABLISHED_CHANCE) {
-        const params = new URLSearchParams();
-        if (context.region) params.set("location", context.region.name);
-        if (category !== "Any") params.set("category", category);
-        if (area !== "Any") params.set("area", area);
-        const response = await fetch(`/api/businesses?${params}`);
-        if (response.ok) {
-          const { businesses } = (await response.json()) as { businesses: ApiBusiness[] };
-          if (businesses.length > 0) {
-            const chosen = businesses[Math.floor(Math.random() * businesses.length)];
-            setCard(fromApi(chosen, regions));
-            return;
-          }
+        const businesses = (await getEstablishedBusinesses({
+          location: context.region?.name,
+          category: category !== "Any" ? category : undefined,
+          area: area !== "Any" ? area : undefined,
+        })) as unknown as ApiBusiness[];
+        if (businesses.length > 0) {
+          const chosen = businesses[Math.floor(Math.random() * businesses.length)];
+          setCard(fromApi(chosen, regions));
+          return;
         }
       }
       setCard(generateBusiness(context));
@@ -323,11 +321,11 @@ export function BusinessGenerator({ regions, hooks }: { regions: Region[]; hooks
               </button>
               {save.status === "saved" && (
                 <span className="text-sm">
-                  Saved as private draft.{" "}
+                  Saved to the archive (in-app only for now).{" "}
                   <Link href={`/objects/${save.id}`} className="underline">
                     Open it
                   </Link>{" "}
-                  to review and set <code>visibility: public</code> when ready.
+                  if you want to review it or mark it <code>visibility: public</code> for the anonymous API.
                 </span>
               )}
               {save.status === "error" && (

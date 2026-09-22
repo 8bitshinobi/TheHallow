@@ -1,20 +1,10 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth";
 import { extractMentionIds } from "@/lib/mentions";
 import { iconFor } from "@/lib/icons";
 import type { HallowObject } from "@/lib/types";
-
-async function requireUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-  return supabase;
-}
 
 /**
  * Property values may embed "@[Name](id)" mentions (see lib/mentions.ts).
@@ -23,7 +13,7 @@ async function requireUser() {
  * Never removes edges - deleting mention text doesn't retract a connection.
  */
 async function syncMentionEdges(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: Awaited<ReturnType<typeof requireUser>>,
   objectId: string,
   properties: Record<string, string>
 ) {

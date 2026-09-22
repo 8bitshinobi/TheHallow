@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { generateNpcForPlace } from "@/app/npcs/actions";
 import { MentionTextarea } from "@/components/MentionTextarea";
+import { hasMention } from "@/lib/mentions";
+import { occupationForPlace } from "@/lib/npcs/placeOccupations";
 
 type Row = { id: string; key: string; value: string };
 
@@ -10,7 +13,16 @@ type Props = {
   onChange: (properties: Record<string, string>) => void;
   /** The object being edited, so property values can @-mention other objects without mentioning themselves. Omit when creating a brand-new object. */
   objectId?: string;
+  /**
+   * Enables the in-place "Generate NPC" button next to an innkeeper/
+   * proprietor field. Omitted for brand-new objects (no place to link the
+   * generated NPC to yet) and for objects with no occupation mapping.
+   */
+  npcFieldContext?: { placeType: string; placeCategory?: string; placeName: string };
 };
+
+/** Field labels (case-insensitive) that can generate an NPC in place. */
+const NPC_FIELD_LABELS = new Set(["innkeeper", "proprietor"]);
 
 function toRows(properties: Record<string, string>): Row[] {
   return Object.entries(properties).map(([key, value]) => ({
@@ -31,7 +43,35 @@ function parseKey(key: string): { group: string | null; label: string } {
   return { group: key.slice(0, dotIndex), label: key.slice(dotIndex + 1) };
 }
 
-export function PropertiesEditor({ properties, onChange, objectId }: Props) {
+export function PropertiesEditor({ properties, onChange, objectId, npcFieldContext }: Props) {
+  const [npcGen, setNpcGen] = useState<Record<string, "pending" | "error">>({});
+  const [npcGenError, setNpcGenError] = useState<Record<string, string>>({});
+  const mappedOccupation = npcFieldContext
+    ? occupationForPlace(npcFieldContext.placeType, npcFieldContext.placeCategory)
+    : null;
+
+  async function generateNpcForRow(row: Row) {
+    if (!npcFieldContext) return;
+    setNpcGen((prev) => ({ ...prev, [row.id]: "pending" }));
+    setNpcGenError((prev) => ({ ...prev, [row.id]: "" }));
+    const result = await generateNpcForPlace({
+      placeType: npcFieldContext.placeType,
+      placeCategory: npcFieldContext.placeCategory,
+      placeName: npcFieldContext.placeName,
+      existingName: !hasMention(row.value) && row.value.trim() ? row.value.trim() : undefined,
+    });
+    if ("error" in result) {
+      setNpcGen((prev) => ({ ...prev, [row.id]: "error" }));
+      setNpcGenError((prev) => ({ ...prev, [row.id]: result.error }));
+      return;
+    }
+    updateValue(row.id, result.mention);
+    setNpcGen((prev) => {
+      const next = { ...prev };
+      delete next[row.id];
+      return next;
+    });
+  }
   // Rows carry a stable id independent of their key text, so editing a key
   // (including typing a "." that moves it into a group) doesn't remount the
   // input and lose focus mid-keystroke.
@@ -76,29 +116,48 @@ export function PropertiesEditor({ properties, onChange, objectId }: Props) {
 
   function renderRow(row: Row, group: string | null) {
     const { label } = parseKey(row.key);
+    const showNpcButton = mappedOccupation && NPC_FIELD_LABELS.has(label.trim().toLowerCase());
+    const npcState = npcGen[row.id];
 
     return (
-      <div key={row.id} className="flex gap-2">
-        <input
-          value={label}
-          onChange={(e) => updateKey(row.id, group, e.target.value)}
-          placeholder="Field"
-          className="h-9 w-1/3 shrink-0 self-start rounded border border-black/15 px-2 py-1 text-sm dark:border-white/15 dark:bg-transparent"
-        />
-        <MentionTextarea
-          value={row.value}
-          onChange={(value) => updateValue(row.id, value)}
-          placeholder="Value (type @ to link another object)"
-          excludeId={objectId}
-        />
-        <button
-          type="button"
-          onClick={() => removeRow(row.id)}
-          className="h-9 self-start rounded px-2 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-          aria-label={`Remove ${label || "property"}`}
-        >
-          ✕
-        </button>
+      <div key={row.id} className="space-y-1">
+        <div className="flex gap-2">
+          <input
+            value={label}
+            onChange={(e) => updateKey(row.id, group, e.target.value)}
+            placeholder="Field"
+            className="h-9 w-1/3 shrink-0 self-start rounded border border-black/15 px-2 py-1 text-sm dark:border-white/15 dark:bg-transparent"
+          />
+          <MentionTextarea
+            value={row.value}
+            onChange={(value) => updateValue(row.id, value)}
+            placeholder="Value (type @ to link another object)"
+            excludeId={objectId}
+          />
+          <button
+            type="button"
+            onClick={() => removeRow(row.id)}
+            className="h-9 self-start rounded px-2 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+            aria-label={`Remove ${label || "property"}`}
+          >
+            ✕
+          </button>
+        </div>
+        {showNpcButton && (
+          <div className="ml-[calc(33.333%+0.5rem)] flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => generateNpcForRow(row)}
+              disabled={npcState === "pending"}
+              className="text-xs text-black/60 underline hover:text-black disabled:opacity-50 dark:text-white/60 dark:hover:text-white"
+            >
+              {npcState === "pending" ? "Generating…" : "⚡ Generate NPC (Novice)"}
+            </button>
+            {npcState === "error" && (
+              <span className="text-xs text-red-600 dark:text-red-400">{npcGenError[row.id]}</span>
+            )}
+          </div>
+        )}
       </div>
     );
   }

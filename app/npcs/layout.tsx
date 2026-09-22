@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { signOut } from "@/app/login/actions";
 
-export default function BusinessesLayout({ children }: { children: React.ReactNode }) {
+export default function NpcsLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
       <header className="border-b border-black/10 dark:border-white/10">
@@ -18,9 +18,6 @@ export default function BusinessesLayout({ children }: { children: React.ReactNo
             </Link>
             <Link href="/businesses" className="text-sm text-black/60 underline dark:text-white/60">
               Businesses
-            </Link>
-            <Link href="/npcs" className="text-sm text-black/60 underline dark:text-white/60">
-              NPCs
             </Link>
             <form action={signOut}>
               <button

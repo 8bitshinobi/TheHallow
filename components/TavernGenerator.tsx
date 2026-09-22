@@ -12,6 +12,7 @@ import {
   type RerollField,
   type TavernCard,
 } from "@/lib/taverns/generate";
+import { getEstablishedTaverns } from "@/app/taverns/actions";
 import { AREAS, isArea, type AreaChoice } from "@/lib/generatorShared";
 import { iconFor } from "@/lib/icons";
 import { Field, List } from "@/components/generatorParts";
@@ -96,17 +97,14 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
     setSave({ status: "idle" });
     try {
       if (Math.random() < ESTABLISHED_CHANCE) {
-        const params = new URLSearchParams();
-        if (context.region) params.set("location", context.region.name);
-        if (area !== "Any") params.set("area", area);
-        const response = await fetch(`/api/places?${params}`);
-        if (response.ok) {
-          const { taverns } = (await response.json()) as { taverns: ApiTavern[] };
-          if (taverns.length > 0) {
-            const chosen = taverns[Math.floor(Math.random() * taverns.length)];
-            setCard(fromApi(chosen, regions));
-            return;
-          }
+        const taverns = (await getEstablishedTaverns({
+          location: context.region?.name,
+          area: area !== "Any" ? area : undefined,
+        })) as unknown as ApiTavern[];
+        if (taverns.length > 0) {
+          const chosen = taverns[Math.floor(Math.random() * taverns.length)];
+          setCard(fromApi(chosen, regions));
+          return;
         }
       }
       setCard(generateTavern(context));
@@ -325,11 +323,11 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
               </button>
               {save.status === "saved" && (
                 <span className="text-sm">
-                  Saved as private draft.{" "}
+                  Saved to the archive (in-app only for now).{" "}
                   <Link href={`/objects/${save.id}`} className="underline">
                     Open it
                   </Link>{" "}
-                  to review and set <code>visibility: public</code> when ready.
+                  if you want to review it or mark it <code>visibility: public</code> for the anonymous API.
                 </span>
               )}
               {save.status === "error" && (

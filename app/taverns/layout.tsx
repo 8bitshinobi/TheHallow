@@ -19,6 +19,9 @@ export default function TavernsLayout({ children }: { children: React.ReactNode 
             <Link href="/businesses" className="text-sm text-black/60 underline dark:text-white/60">
               Businesses
             </Link>
+            <Link href="/npcs" className="text-sm text-black/60 underline dark:text-white/60">
+              NPCs
+            </Link>
             <form action={signOut}>
               <button
                 type="submit"
