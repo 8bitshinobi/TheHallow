@@ -126,7 +126,7 @@ function isLightColor(hex: string): boolean {
 // Duration/curve for animating a node's scale and opacity toward whatever
 // its target became after a hover change. A steep deceleration (most of the
 // change happens fast, up front) reads punchier than a plain ease-out.
-const TRANSITION_MS = 320;
+const TRANSITION_MS = 2000;
 function easeOutQuint(t: number): number {
   return 1 - Math.pow(1 - t, 5);
 }
