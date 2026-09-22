@@ -642,6 +642,24 @@ export function GraphCanvas({ nodes, edges, centerId, linkMode }: Props) {
           warmupTicks={300}
           cooldownTime={reduceMotion ? 0 : 4000}
           enableNodeDrag={false}
+          // The underlying library (force-graph) attaches its pan/zoom
+          // gesture to the whole canvas with NO movement threshold for
+          // touch (unlike mouse, which has a small built-in click-distance
+          // tolerance) — see touchmoved() in d3-zoom's source. Any sub-pixel
+          // jitter during a tap, which is unavoidable with a finger, gets
+          // read as "the user started panning," which both cancels the
+          // hover mid-press and suppresses the click on release. Requiring
+          // a second finger to start a pan/zoom leaves a single-finger tap
+          // free to register as a click; two-finger pinch/pan is untouched,
+          // and mouse events (event.touches is undefined) are unaffected.
+          enablePanInteraction={(event) => {
+            // The library's type declares this callback as MouseEvent, but
+            // at runtime it's whatever native event actually started the
+            // gesture — a TouchEvent for a touch-originated one (verified
+            // against d3-zoom's source, which the library wraps).
+            const touches = (event as unknown as TouchEvent).touches;
+            return touches === undefined || touches.length > 1;
+          }}
           onEngineStop={() => {
             if (hasFitRef.current) return;
             hasFitRef.current = true;
