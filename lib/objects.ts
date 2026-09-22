@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { fallbackGraphLabel } from "@/lib/graphLabel";
 import { iconFor } from "@/lib/icons";
 import type { ConnectedObject, Graph, GraphNode, HallowObject } from "@/lib/types";
 
@@ -32,12 +33,6 @@ export async function getObject(id: string): Promise<HallowObject | null> {
 
   if (error) throw new Error(error.message);
   return data;
-}
-
-/** First 1-2 words of a name, used when no explicit graph label is set. */
-function fallbackGraphLabel(name: string): string {
-  const words = name.split(/\s+/).filter(Boolean);
-  return words.slice(0, 2).join(" ");
 }
 
 function toGraphObject(row: {

@@ -3,17 +3,19 @@
 import { useState, useTransition } from "react";
 import { updateObject } from "@/app/objects/actions";
 import { PropertiesEditor } from "@/components/PropertiesEditor";
+import { fallbackGraphLabel } from "@/lib/graphLabel";
 import { iconFor } from "@/lib/icons";
 import { rethrowIfRedirectError } from "@/lib/utils";
 import type { HallowObject } from "@/lib/types";
 
 export function ObjectPropertiesPanel({ object }: { object: HallowObject }) {
   const [name, setName] = useState(object.name);
-  // The icon has its own input below, so it is kept out of the generic
-  // properties editor (which would otherwise overwrite it) and merged back
-  // on save.
-  const { icon: initialIcon = "", ...otherProperties } = object.properties;
+  // The icon and graph label each have their own input below, so they're
+  // kept out of the generic properties editor (which would otherwise
+  // overwrite them) and merged back in on save.
+  const { icon: initialIcon = "", label: initialLabel = "", ...otherProperties } = object.properties;
   const [icon, setIcon] = useState(initialIcon);
+  const [label, setLabel] = useState(initialLabel);
   const [properties, setProperties] = useState(otherProperties);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +30,7 @@ export function ObjectPropertiesPanel({ object }: { object: HallowObject }) {
     );
 
     if (icon.trim()) cleanedProperties.icon = icon.trim();
+    if (label.trim()) cleanedProperties.label = label.trim();
 
     startTransition(async () => {
       try {
@@ -75,6 +78,26 @@ export function ObjectPropertiesPanel({ object }: { object: HallowObject }) {
           />
           <span className="text-xs text-black/50 dark:text-white/50">
             Optional emoji that overrides the automatic one. Leave blank to use the default.
+          </span>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="graph-label" className="text-sm font-medium">
+          Graph label
+        </label>
+        <div className="flex items-center gap-3">
+          <input
+            id="graph-label"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            maxLength={40}
+            placeholder={fallbackGraphLabel(name)}
+            className="w-48 rounded border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent"
+          />
+          <span className="text-xs text-black/50 dark:text-white/50">
+            Short name shown under this node on the graph. Leave blank to use the first word or
+            two of the name above, which can get truncated for longer names.
           </span>
         </div>
       </div>
