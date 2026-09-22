@@ -21,7 +21,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // Forced dark theme (Scott's choice: dark gray background, always —
+      // not conditional on the visitor's OS preference). Every "dark:"
+      // Tailwind class in the app already has a light-mode counterpart
+      // ("text-black dark:text-white", etc.), so making "dark" a permanent
+      // class here (paired with the @custom-variant in globals.css) flips
+      // the whole app without touching each component individually.
+      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

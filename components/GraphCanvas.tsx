@@ -126,7 +126,7 @@ function isLightColor(hex: string): boolean {
 // Duration/curve for animating a node's scale and opacity toward whatever
 // its target became after a hover change. A steep deceleration (most of the
 // change happens fast, up front) reads punchier than a plain ease-out.
-const TRANSITION_MS = 2000;
+const TRANSITION_MS = 1750;
 function easeOutQuint(t: number): number {
   return 1 - Math.pow(1 - t, 5);
 }
@@ -264,10 +264,10 @@ function useReducedMotion(): boolean {
 
 // Canvas fillStyle doesn't understand CSS custom properties the way an SVG
 // `fill` attribute does — "var(--background)" is just an invalid color
-// string on a 2D context. --background itself only ever changes via the
-// "prefers-color-scheme" media query (see globals.css), not a runtime
-// class toggle, so re-reading it on that query's change event keeps this
-// in sync with the OS theme without polling.
+// string on a 2D context, so it has to be read via getComputedStyle
+// instead. The site's theme is now a forced dark gray (see globals.css) with
+// no OS-driven light/dark toggle, so --background is effectively constant;
+// this listener is harmless dead weight kept in case that ever changes.
 function subscribeColorScheme(onChange: () => void) {
   const mql = window.matchMedia("(prefers-color-scheme: dark)");
   mql.addEventListener("change", onChange);
