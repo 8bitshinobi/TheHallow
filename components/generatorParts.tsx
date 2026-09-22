@@ -1,8 +1,20 @@
-export function List({ items }: { items: string[] }) {
+export function List({
+  items,
+  /** Index at which "added" (randomly topped-up, not real archive content) items start; undefined means every item is real. */
+  addedFrom,
+}: {
+  items: string[];
+  addedFrom?: number;
+}) {
   return (
     <ul className="list-disc space-y-0.5 pl-5">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
+      {items.map((item, i) => (
+        <li key={item}>
+          {item}
+          {addedFrom !== undefined && i >= addedFrom && (
+            <span className="ml-1.5 text-[10px] text-black/40 dark:text-white/40">(added)</span>
+          )}
+        </li>
       ))}
     </ul>
   );

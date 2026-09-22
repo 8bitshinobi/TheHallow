@@ -15,6 +15,7 @@ import {
   type Region,
   type RerollField,
   type TavernCard,
+  type ToppableTavernField,
 } from "@/lib/taverns/generate";
 import { getEstablishedTaverns, saveRolledTavernFields } from "@/app/taverns/actions";
 import { AREAS, isArea, type AreaChoice } from "@/lib/generatorShared";
@@ -126,6 +127,20 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
   /** True for a field that's tagged "rolled" — random, not yet real archive content. */
   function isRolled(field: FillableTavernField): boolean {
     return card?.rolledFields?.includes(field) ?? false;
+  }
+
+  /** "rolled" for a field that was entirely blank, or "+N added" for a real list that was merely topped up. */
+  function fieldTag(field: FillableTavernField, toppable?: ToppableTavernField): string | undefined {
+    if (!isRolled(field)) return undefined;
+    const added = toppable ? card?.toppedUp?.[toppable] : undefined;
+    return added !== undefined ? `+${added} added` : "rolled";
+  }
+
+  /** Index at which a list's items stop being real and start being randomly added, for List's addedFrom prop. */
+  function addedFrom(field: ToppableTavernField, length: number): number | undefined {
+    const added = card?.toppedUp?.[field];
+    if (added !== undefined) return length - added;
+    return isRolled(field) ? 0 : undefined;
   }
 
   // RerollField (the manual "reroll" button names) doesn't map 1:1 onto
@@ -348,24 +363,24 @@ export function TavernGenerator({ regions, hooks }: { regions: Region[]; hooks: 
           )}
           <Field
             label="Drinks"
-            tag={isRolled("drinks") ? "rolled" : undefined}
+            tag={fieldTag("drinks", "drinks")}
             onReroll={!card.established || isRolled("drinks") || isRolled("food") ? () => reroll("menu") : undefined}
           >
-            <List items={card.drinks} />
+            <List items={card.drinks} addedFrom={addedFrom("drinks", card.drinks.length)} />
           </Field>
-          <Field label="Food" tag={isRolled("food") ? "rolled" : undefined}>
-            <List items={card.food} />
+          <Field label="Food" tag={fieldTag("food", "food")}>
+            <List items={card.food} addedFrom={addedFrom("food", card.food.length)} />
           </Field>
           <Field
             label={`Patrons (${card.patrons.length})`}
-            tag={isRolled("patrons") ? "rolled" : undefined}
+            tag={fieldTag("patrons", "patrons")}
             onReroll={!card.established || isRolled("patrons") ? () => reroll("patrons") : undefined}
           >
-            <List items={card.patrons} />
+            <List items={card.patrons} addedFrom={addedFrom("patrons", card.patrons.length)} />
           </Field>
           <Field
             label="Rumors"
-            tag={isRolled("rumors") ? "rolled" : undefined}
+            tag={fieldTag("rumors", "rumors")}
             onReroll={!card.established || isRolled("rumors") ? () => reroll("rumor") : undefined}
           >
             <ul className="list-disc space-y-1 pl-5">

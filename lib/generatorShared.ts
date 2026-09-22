@@ -30,6 +30,29 @@ export function sample<T>(list: readonly T[], count: number): T[] {
   return copy.slice(0, count);
 }
 
+/**
+ * Tops up a real (but under-populated) list to a minimum length by
+ * appending freshly generated items, deduplicated against what's already
+ * there — the existing items are never reordered, replaced or removed.
+ * Used when an established archive record has some real content in a list
+ * field but fewer entries than a full generation would normally produce
+ * (e.g. a tavern saved before "3-5 drinks" was the norm, with just one).
+ */
+export function topUpList<T>(
+  existing: T[],
+  generateFull: () => T[],
+  minimum: number,
+  keyOf: (item: T) => string = (item) => String(item)
+): { merged: T[]; addedCount: number } {
+  if (existing.length >= minimum) return { merged: existing, addedCount: 0 };
+  const needed = minimum - existing.length;
+  const existingKeys = new Set(existing.map(keyOf));
+  const added = generateFull()
+    .filter((item) => !existingKeys.has(keyOf(item)))
+    .slice(0, needed);
+  return { merged: [...existing, ...added], addedCount: added.length };
+}
+
 // ---------------------------------------------------------------------------
 // Area (how well-off the part of the settlement is) — drives prices, staff
 // size, and how the place is described.

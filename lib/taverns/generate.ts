@@ -34,6 +34,7 @@ import {
   resolveArea,
   sample,
   formatPrice,
+  topUpList,
   type Area,
   type AreaChoice,
 } from "@/lib/generatorShared";
@@ -96,12 +97,21 @@ export type TavernCard = {
   /** The crowd choice used; "Any" mixes every crowd's patrons. */
   crowd?: CrowdChoice;
   /**
-   * Fields that were blank on a real, established tavern and got randomly
-   * filled in for display (see fillEstablishedTavernBlanks) rather than
-   * coming from the archive. Undefined/empty on a fully-real or brand-new
-   * card. Cleared once those fields are actually saved.
+   * Fields that were blank (or, for list fields, under-populated) on a
+   * real, established tavern and got randomly filled in for display (see
+   * fillEstablishedTavernBlanks) rather than coming from the archive.
+   * Undefined/empty on a fully-real or brand-new card. Cleared once those
+   * fields are actually saved.
    */
   rolledFields?: FillableTavernField[];
+  /**
+   * For a list field that had SOME real items but fewer than a full
+   * generation normally produces, how many freshly-generated items were
+   * appended at the end (the rest of the array is real, untouched). Absent
+   * for a field that was rerolled from fully blank (all of it is new) or
+   * that needed no top-up at all.
+   */
+  toppedUp?: Partial<Record<ToppableTavernField, number>>;
 };
 
 export type FillableTavernField =
@@ -114,6 +124,16 @@ export type FillableTavernField =
   | "patrons"
   | "rumors"
   | "signature";
+
+export type ToppableTavernField = "drinks" | "food" | "patrons" | "rumors";
+
+/** Minimum length a list field should have — below this, an established record's list is "topped up" rather than left sparse. Matches each field's normal generation range. */
+const LIST_MINIMUMS: Record<ToppableTavernField, number> = {
+  drinks: 3,
+  food: 5,
+  patrons: 3,
+  rumors: 3,
+};
 
 export type GenContext = {
   region: Region | null;
@@ -261,12 +281,45 @@ export function rerollField(card: TavernCard, field: RerollField, context: GenCo
       return { ...card, name: generateName() };
     case "innkeeper":
       return { ...card, ...generateInnkeeper() };
-    case "menu":
-      return { ...card, drinks: generateDrinks(area), food: generateFood(area) };
-    case "patrons":
+    case "menu": {
+      // A topped-up field's real prefix is kept; only the added tail is
+      // re-rolled, at the same total length as before.
+      const drinks =
+        card.toppedUp?.drinks !== undefined
+          ? topUpList(
+              card.drinks.slice(0, card.drinks.length - card.toppedUp.drinks),
+              () => generateDrinks(area),
+              card.drinks.length
+            ).merged
+          : generateDrinks(area);
+      const food =
+        card.toppedUp?.food !== undefined
+          ? topUpList(
+              card.food.slice(0, card.food.length - card.toppedUp.food),
+              () => generateFood(area),
+              card.food.length
+            ).merged
+          : generateFood(area);
+      return { ...card, drinks, food };
+    }
+    case "patrons": {
+      if (card.toppedUp?.patrons !== undefined) {
+        const crowd = card.crowd && card.crowd !== "Any" ? card.crowd : context.crowd;
+        const real = card.patrons.slice(0, card.patrons.length - card.toppedUp.patrons);
+        return { ...card, crowd, patrons: topUpList(real, () => generatePatrons(crowd), card.patrons.length).merged };
+      }
       return { ...card, crowd: context.crowd, patrons: generatePatrons(context.crowd) };
-    case "rumor":
+    }
+    case "rumor": {
+      if (card.toppedUp?.rumors !== undefined) {
+        const real = card.rumors.slice(0, card.rumors.length - card.toppedUp.rumors);
+        return {
+          ...card,
+          rumors: topUpList(real, () => generateRumors(context.hooks), card.rumors.length, (r) => r.text).merged,
+        };
+      }
       return { ...card, rumors: generateRumors(context.hooks) };
+    }
     case "signature":
       // Explicit request: always produces one, unlike first generation.
       return { ...card, signatureKind: undefined, ...generateSignature(context.region, area) };
@@ -287,6 +340,7 @@ export function rerollField(card: TavernCard, field: RerollField, context: GenCo
 export function fillEstablishedTavernBlanks(card: TavernCard, context: GenContext): TavernCard {
   let next = card;
   const rolled: FillableTavernField[] = [];
+  const toppedUp: Partial<Record<ToppableTavernField, number>> = {};
 
   // Area first: drinks/food/employees pricing and counts depend on it.
   if (!next.area) {
@@ -307,23 +361,58 @@ export function fillEstablishedTavernBlanks(card: TavernCard, context: GenContex
     next = { ...next, employees: generateEmployees(TAVERN_ROLES, area, "tavern") };
     rolled.push("employees");
   }
+
+  // Drinks/food/patrons/rumors: a real record with SOME items but fewer
+  // than a full generation normally has isn't "blank" — it's sparse, often
+  // because it predates this list-based feature. Top it up instead of
+  // leaving it locked at one item with no way to add more.
   if (next.drinks.length === 0) {
     next = { ...next, drinks: generateDrinks(area) };
     rolled.push("drinks");
+  } else if (next.drinks.length < LIST_MINIMUMS.drinks) {
+    const { merged, addedCount } = topUpList(next.drinks, () => generateDrinks(area), LIST_MINIMUMS.drinks);
+    next = { ...next, drinks: merged };
+    rolled.push("drinks");
+    toppedUp.drinks = addedCount;
   }
+
   if (next.food.length === 0) {
     next = { ...next, food: generateFood(area) };
     rolled.push("food");
+  } else if (next.food.length < LIST_MINIMUMS.food) {
+    const { merged, addedCount } = topUpList(next.food, () => generateFood(area), LIST_MINIMUMS.food);
+    next = { ...next, food: merged };
+    rolled.push("food");
+    toppedUp.food = addedCount;
   }
+
   if (next.patrons.length === 0) {
     const crowd = next.crowd && next.crowd !== "Any" ? next.crowd : context.crowd;
     next = { ...next, crowd, patrons: generatePatrons(crowd) };
     rolled.push("patrons");
+  } else if (next.patrons.length < LIST_MINIMUMS.patrons) {
+    const crowd = next.crowd && next.crowd !== "Any" ? next.crowd : context.crowd;
+    const { merged, addedCount } = topUpList(next.patrons, () => generatePatrons(crowd), LIST_MINIMUMS.patrons);
+    next = { ...next, crowd, patrons: merged };
+    rolled.push("patrons");
+    toppedUp.patrons = addedCount;
   }
+
   if (next.rumors.length === 0) {
     next = { ...next, rumors: generateRumors(context.hooks) };
     rolled.push("rumors");
+  } else if (next.rumors.length < LIST_MINIMUMS.rumors) {
+    const { merged, addedCount } = topUpList(
+      next.rumors,
+      () => generateRumors(context.hooks),
+      LIST_MINIMUMS.rumors,
+      (r) => r.text
+    );
+    next = { ...next, rumors: merged };
+    rolled.push("rumors");
+    toppedUp.rumors = addedCount;
   }
+
   if (!next.signature) {
     // Same odds as first generation — a blank signature might genuinely mean
     // "no specialty," not "not yet rolled," so this doesn't force one.
@@ -334,7 +423,7 @@ export function fillEstablishedTavernBlanks(card: TavernCard, context: GenContex
     }
   }
 
-  return rolled.length > 0 ? { ...next, rolledFields: rolled } : next;
+  return rolled.length > 0 ? { ...next, rolledFields: rolled, toppedUp } : next;
 }
 
 /** Storage-shaped properties for just a card's rolled (not-yet-real) fields, for saving them into the archive. */
