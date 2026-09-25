@@ -22,6 +22,12 @@ export default function BusinessesLayout({ children }: { children: React.ReactNo
             <Link href="/npcs" className="text-sm text-black/60 underline dark:text-white/60">
               NPCs
             </Link>
+            <Link href="/arcs" className="text-sm text-black/60 underline dark:text-white/60">
+              Arcs
+            </Link>
+            <Link href="/compilations" className="text-sm text-black/60 underline dark:text-white/60">
+              Compilations
+            </Link>
             <form action={signOut}>
               <button
                 type="submit"

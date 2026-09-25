@@ -28,6 +28,9 @@ export const TYPE_ICONS: Record<string, string> = {
   events: "🗓️",
   ancestries: "🧬",
   cultures: "🏺",
+  arc: "🧵",
+  plot_beat: "🎬",
+  compilation: "📚",
 };
 
 /** Keyed by lowercase category: every business category, plus settlement sizes. */

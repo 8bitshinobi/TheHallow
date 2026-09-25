@@ -118,6 +118,55 @@ regardless of OS light/dark preference (Scott's explicit choice, not a
 default) — see `app/globals.css`'s `@custom-variant dark` and the permanent
 `dark` class on `<html>` in `app/layout.tsx`.
 
+## Plot / Compilation / Export (added 2026-09-25)
+
+Lets Scott stage narrative-bearing objects into an ordered, exportable
+"reading" — a compiled document built from selected objects, in a chosen
+order, exported as RTF.
+
+- **`arc`** and **`plot_beat`** are just object types (no schema change) —
+  an arc is a top-level story-arc container; a plot beat is a chapter/beat
+  within one. A plot beat links to its arc via a normal edge (label "part
+  of"), same mechanism as any other connection. `/arcs` and `/arcs/[id]`
+  are dedicated pages (`lib/compilations.ts`'s `listArcs`,
+  `app/arcs/actions.ts`) with a "Plot beats in this arc" panel and a
+  quick-create that creates the plot_beat object and links it to the arc in
+  one step (`createPlotBeatInArc`). Editing an arc/plot beat's own
+  properties still goes through the generic `/objects/[id]` page — `/arcs`
+  only adds the arc-specific overview.
+- **Any object type can carry `narrative_text`/`include_in_story`/
+  `rough_era`/`level_range`/`status` properties** (cosmology entries, lore,
+  plot beats, etc.) — these are plain properties through the existing
+  generic `PropertiesEditor`, not a new form. `narrative_text` is the only
+  field RTF export reads for prose; an entry's export **title** is
+  `properties.title` if set, else the object's own `name` (the schema
+  suggested a bare `properties.title`, but this app already has `name` as
+  the canonical display name for every object — `title` is only an
+  export-specific override when you want the compiled reading to show
+  different wording than the in-app name).
+- **`compilation`** is an object type whose contents live in a dedicated
+  table, `compilation_entries` (migration `0004_compilation_entries.sql`),
+  not in properties/edges — an object can be `draft`/`placed`/`cut` within
+  a specific compilation, with a fractional `position` (meaningful only
+  when `placed`) and a free-text `rough_era` bucket for grouping drafts.
+  Built and managed entirely through `/compilations` and
+  `/compilations/[id]` (`components/CompilationBuilder.tsx`,
+  `components/CompilationEntryPicker.tsx`) — never through the generic
+  object properties editor. Reordering is **move up/down buttons**, not
+  drag-and-drop (Scott's choice — simpler and more reliable, especially on
+  touch): each move swaps the `position` value between the two adjacent
+  placed entries directly, rather than renumbering the whole list.
+- **RTF export** (`lib/rtf.ts`, `exportCompilationRtf` in
+  `app/compilations/actions.ts`): reads only `placed` entries in `position`
+  order, builds a minimal one-font RTF document (heading + body paragraphs
+  + page break per entry), and is downloaded client-side via a Blob — no
+  new API route. Same authenticated-only access as the rest of the app; RTF
+  export was not made part of the anonymous public API.
+- **Not reconciled:** the Notion migration already created a
+  `campaign_arc`-typed object ("The Surface Arc"), which predates and
+  overlaps conceptually with the new `arc` type. Left as-is — deciding
+  whether/how to merge them is Scott's call, not assumed here.
+
 ## Multi-user access: players and suggestions
 
 Players (not just Scott) need access to this system, specifically to their own PC's

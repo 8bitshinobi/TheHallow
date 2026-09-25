@@ -29,3 +29,17 @@ export type ConnectedObject = {
 export type GraphNode = { id: string; type: string; name: string; graphLabel?: string; icon?: string };
 export type GraphEdge = { id: string; from: string; to: string; label: string | null };
 export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] };
+
+export type CompilationEntryStatus = "draft" | "placed" | "cut";
+
+export type CompilationEntry = {
+  id: string;
+  compilation_id: string;
+  object_id: string;
+  status: CompilationEntryStatus;
+  position: number | null;
+  rough_era: string | null;
+  created_at: string;
+  updated_at: string;
+  object: { id: string; type: string; name: string; properties: Record<string, string>; icon: string };
+};

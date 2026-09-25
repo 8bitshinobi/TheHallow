@@ -22,6 +22,12 @@ export default function ObjectsLayout({ children }: { children: React.ReactNode 
             <Link href="/objects/graph" className="text-sm text-black/60 underline dark:text-white/60">
               Graph
             </Link>
+            <Link href="/arcs" className="text-sm text-black/60 underline dark:text-white/60">
+              Arcs
+            </Link>
+            <Link href="/compilations" className="text-sm text-black/60 underline dark:text-white/60">
+              Compilations
+            </Link>
             <form action={signOut}>
               <button
                 type="submit"

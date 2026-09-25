@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { signOut } from "@/app/login/actions";
 
-export default function NpcsLayout({ children }: { children: React.ReactNode }) {
+export default function ArcsLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
       <header className="border-b border-black/10 dark:border-white/10">
@@ -19,8 +19,8 @@ export default function NpcsLayout({ children }: { children: React.ReactNode }) 
             <Link href="/businesses" className="text-sm text-black/60 underline dark:text-white/60">
               Businesses
             </Link>
-            <Link href="/arcs" className="text-sm text-black/60 underline dark:text-white/60">
-              Arcs
+            <Link href="/npcs" className="text-sm text-black/60 underline dark:text-white/60">
+              NPCs
             </Link>
             <Link href="/compilations" className="text-sm text-black/60 underline dark:text-white/60">
               Compilations
